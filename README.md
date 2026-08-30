@@ -272,6 +272,7 @@ The page provides:
 - the production-ordered account queue and next-account preview;
 - separate CPA priority and plugin priority indicators;
 - quota bars, reset times, availability reasons, and circuit state;
+- quota bars use green at 60% or above, orange from 30% through below 60%, and red below 30% for both quota windows;
 - scheduler settings with plain-language safety guidance;
 - aliases, notes, tags, groups, and per-account plugin priority editing;
 - quota refresh, log viewing/export, and configuration import/export; and
