@@ -6,9 +6,10 @@
 provides quota-aware scheduling, account-health monitoring, reset-window
 activation, and account annotations for Codex accounts.
 
-Codex Fleet Manager is independently maintained and distributed under the MIT
-License. It preserves the original project's copyright and license notices;
-it is not an official release or endorsement from the original author.
+Codex Fleet Manager is derived from Codex Quota Scheduler by Jeffery Zhang and
+improved and maintained independently by Jacob. It is distributed under the
+MIT License and preserves the original project's copyright and license notices.
+It is not an official successor or endorsed release of the original project.
 
 ## v0.1.0 Highlights
 
