@@ -11,7 +11,11 @@ import (
 )
 
 const (
-	PluginID = "codex-quota-scheduler"
+	// PluginID is the stable CPA and Store identifier. It deliberately stays
+	// separate from the human-facing product name so this plugin can coexist
+	// with its predecessor without sharing routes or persisted state.
+	PluginID          = "codex-fleet-manager"
+	PluginDisplayName = "Codex Fleet Manager"
 
 	chatGPTQuotaEndpoint = "https://chatgpt.com/backend-api/wham/usage"
 
@@ -21,7 +25,7 @@ const (
 	FallbackFillFirst FallbackMode = "fill-first"
 )
 
-var pluginVersion = "0.2.1"
+var pluginVersion = "0.1.0"
 
 type MonthlyMode string
 
@@ -344,8 +348,8 @@ func PluginRegistration() registration {
 		Metadata: pluginapi.Metadata{
 			Name:             PluginID,
 			Version:          pluginVersion,
-			Author:           "Jeffery",
-			GitHubRepository: "https://github.com/JefferyZhang2019/cpa-plugin-codex-quota-scheduler",
+			Author:           "doer-ee",
+			GitHubRepository: "https://github.com/doer-ee/cpa-plugin-codex-fleet-manager",
 			Logo:             "https://raw.githubusercontent.com/router-for-me/CLIProxyAPI/main/docs/logo.png",
 		},
 		Capabilities: registrationCapabilities{

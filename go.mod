@@ -1,4 +1,4 @@
-module github.com/jeffery/codex-quota-scheduler
+module github.com/doer-ee/cpa-plugin-codex-fleet-manager
 
 go 1.26.0
 

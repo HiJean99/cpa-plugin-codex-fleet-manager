@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jeffery/codex-quota-scheduler/testsupport"
+	"github.com/doer-ee/cpa-plugin-codex-fleet-manager/testsupport"
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
 )
 

@@ -27,8 +27,8 @@ func TestManagementRegisterExposesStatusResourceAndRoutes(t *testing.T) {
 	if resources["/status"].Menu == "" {
 		t.Fatalf("status resource Menu is empty: %#v", resources["/status"])
 	}
-	if resources["/status"].Menu != "Codex Scheduler" {
-		t.Fatalf("status resource Menu = %q, want language-neutral English label", resources["/status"].Menu)
+	if resources["/status"].Menu != PluginDisplayName {
+		t.Fatalf("status resource Menu = %q, want %q", resources["/status"].Menu, PluginDisplayName)
 	}
 	if _, ok := resources["/status-data"]; ok {
 		t.Fatalf("status-data resource is still registered: %#v", resp.Resources)
@@ -55,23 +55,23 @@ func TestManagementRegisterExposesStatusResourceAndRoutes(t *testing.T) {
 	paths := map[string]string{}
 	for _, route := range resp.Routes {
 		paths[route.Method+" "+route.Path] = route.Path
-		if route.Method == http.MethodGet && route.Path == "/plugins/codex-quota-scheduler/status" && route.Menu != "" {
+		if route.Method == http.MethodGet && route.Path == "/plugins/codex-fleet-manager/status" && route.Menu != "" {
 			t.Fatalf("management status route Menu = %q, want empty", route.Menu)
 		}
 	}
 	for _, key := range []string{
-		"GET /plugins/codex-quota-scheduler/status",
-		"GET /plugins/codex-quota-scheduler/settings",
-		"PUT /plugins/codex-quota-scheduler/settings",
-		"POST /plugins/codex-quota-scheduler/refresh",
-		"POST /plugins/codex-quota-scheduler/refresh/account",
-		"GET /plugins/codex-quota-scheduler/logs",
-		"GET /plugins/codex-quota-scheduler/export",
-		"POST /plugins/codex-quota-scheduler/import",
-		"GET /plugins/codex-quota-scheduler/annotations",
-		"PUT /plugins/codex-quota-scheduler/annotations",
-		"PATCH /plugins/codex-quota-scheduler/annotations/account",
-		"PATCH /plugins/codex-quota-scheduler/annotations/group",
+		"GET /plugins/codex-fleet-manager/status",
+		"GET /plugins/codex-fleet-manager/settings",
+		"PUT /plugins/codex-fleet-manager/settings",
+		"POST /plugins/codex-fleet-manager/refresh",
+		"POST /plugins/codex-fleet-manager/refresh/account",
+		"GET /plugins/codex-fleet-manager/logs",
+		"GET /plugins/codex-fleet-manager/export",
+		"POST /plugins/codex-fleet-manager/import",
+		"GET /plugins/codex-fleet-manager/annotations",
+		"PUT /plugins/codex-fleet-manager/annotations",
+		"PATCH /plugins/codex-fleet-manager/annotations/account",
+		"PATCH /plugins/codex-fleet-manager/annotations/group",
 	} {
 		if paths[key] == "" {
 			t.Fatalf("missing route %s in %#v", key, paths)
@@ -107,33 +107,33 @@ func TestManagementRoutesDispatchFullCPAPaths(t *testing.T) {
 		{
 			name:   "management status",
 			method: http.MethodGet,
-			path:   "/v0/management/plugins/codex-quota-scheduler/status",
+			path:   "/v0/management/plugins/codex-fleet-manager/status",
 			query:  url.Values{"format": []string{"json"}},
 			want:   http.StatusOK,
 		},
 		{
 			name:   "resource status",
 			method: http.MethodGet,
-			path:   "/v0/resource/plugins/codex-quota-scheduler/status",
+			path:   "/v0/resource/plugins/codex-fleet-manager/status",
 			want:   http.StatusOK,
 		},
 		{
 			name:   "management refresh",
 			method: http.MethodPost,
-			path:   "/v0/management/plugins/codex-quota-scheduler/refresh",
+			path:   "/v0/management/plugins/codex-fleet-manager/refresh",
 			want:   http.StatusAccepted,
 		},
 		{
 			name:   "management refresh one",
 			method: http.MethodPost,
-			path:   "/v0/management/plugins/codex-quota-scheduler/refresh/account",
+			path:   "/v0/management/plugins/codex-fleet-manager/refresh/account",
 			body:   []byte(`{"auth_id":"auth-1"}`),
 			want:   http.StatusAccepted,
 		},
 		{
 			name:   "resource mutation hidden",
 			method: http.MethodGet,
-			path:   "/v0/resource/plugins/codex-quota-scheduler/refresh",
+			path:   "/v0/resource/plugins/codex-fleet-manager/refresh",
 			want:   http.StatusNotFound,
 		},
 	}
@@ -170,7 +170,7 @@ func TestManagementRefreshAccountRejectsOutsideAdmission(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodPost,
-		Path:   "/plugins/codex-quota-scheduler/refresh/account",
+		Path:   "/plugins/codex-fleet-manager/refresh/account",
 		Body:   []byte(`{"auth_id":"low"}`),
 	}, time.Now())
 	if resp.StatusCode != http.StatusConflict {
@@ -199,7 +199,7 @@ func TestManagementUsesActiveRosterOnly(t *testing.T) {
 	}}
 	resp := HandleManagementRequestWithLifecycle(store, pluginapi.ManagementRequest{
 		Method: http.MethodGet,
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now, lifecycle)
 	if resp.StatusCode != http.StatusOK {
@@ -234,7 +234,7 @@ func TestManagementStatusExposesNonSensitiveRosterAdmissionDiagnostics(t *testin
 
 	resp := HandleManagementRequestWithLifecycle(store, pluginapi.ManagementRequest{
 		Method: http.MethodGet,
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now, lifecycle)
 	if resp.StatusCode != http.StatusOK {
@@ -358,7 +358,7 @@ func TestStatusJSONOrdersAccountsBySchedulerOrder(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: "GET",
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now)
 
@@ -392,7 +392,7 @@ func TestStatusJSONMovesUnavailableAccountsBehindAvailableAccounts(t *testing.T)
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: "GET",
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now)
 
@@ -503,7 +503,7 @@ func TestStatusJSONIncludesSchedulerSummary(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: "GET",
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now)
 
@@ -526,7 +526,7 @@ func TestStatusJSONKeepsCPAAndSchedulerPrioritiesDistinct(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodGet,
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now)
 	if resp.StatusCode != http.StatusOK {
@@ -554,7 +554,7 @@ func TestStatusNextAuthIDScansLowerPluginPriority(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: "GET",
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now)
 	if resp.StatusCode != http.StatusOK {
@@ -637,7 +637,7 @@ func TestStatusJSONIncludesEmptyLastSelectionFields(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: "GET",
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now)
 	if resp.StatusCode != http.StatusOK {
@@ -678,7 +678,7 @@ func TestStatusHTMLRedactsSensitiveFieldsAndEscapesUserFields(t *testing.T) {
 	}
 	html := string(resp.Body)
 	lower := strings.ToLower(html)
-	if !strings.Contains(html, "codex-quota-scheduler") {
+	if !strings.Contains(html, "codex-fleet-manager") {
 		t.Fatalf("html missing plugin id: %s", html)
 	}
 	for _, want := range []string{"Codex 额度调度器", "调度设置", "账号队列", "保存设置", "刷新额度", "账号卡片"} {
@@ -713,7 +713,7 @@ func TestStatusHTMLUsesManagementAPIActionsModalProgressAndLogs(t *testing.T) {
 	}
 	html := string(resp.Body)
 	lower := strings.ToLower(html)
-	for _, want := range []string{"quota-bar", "quota-remaining", "quotaResetTime", "quota-reset-label", "formatQuotaResetLabels", "label+' reset: '", "resetRemainingText", "Math.floor(remaining/minute)", "Math.floor(remaining/hour)", "Math.floor(remaining/day)", "已到期", "SORTED_INLINE_TRANSLATIONS", "right[0].length-left[0].length", "Circuit counts", "localeColon", "resetCreditCount", "Number(value)===1?'time':'times'", "data-i18n-aria", "queue.aria", "renderAccounts(STATUS.accounts||[])", "log.quota.refresh_success", "log.scheduler.fallback", "notice.dataset.i18nKey", "date.toLocaleString(dateLocale()", "storedLocale", "parentLocale", "window.parent.document.documentElement.lang", "watchParentLocale", "if(storedLocale())return", "attributeFilter:['lang']", "detectLocale(){return storedLocale()||parentLocale()||'en'}", "editDialog", "logList", "openEdit", "exportLogs", "codex-quota-scheduler-logs.json", "maxLogEntries", "logRetention", "refreshOneQuota", "togglePin", "createPinButton", "priority=pinned?0:999", "actions.pinAccount", "actions.unpinAccount", "notice.accountPinned", "notice.accountUnpinned", "refreshStatus", "renderAccounts", "renderMetrics", "metricNextAuthID", "metricMonthlyMode", "metricLastSelected", `id="managementKeyField"`, "managementKey", "rememberManagementKey", "MANAGEMENT_KEY_STORAGE_KEY", "restoreRememberedManagementKey", "syncRememberedManagementKey", "syncManagementKeyVisibility", "field.hidden=remember.checked", "codex-quota-scheduler-management-key-v1", "loadStatus", "MANAGEMENT_BASE", "/v0/management/plugins/codex-quota-scheduler", "authHeaders()", "localeSelect", "TRANSLATIONS", "codex-quota-scheduler-locale-v1", "Scheduler Settings", "Account Queue", "INLINE_TRANSLATIONS", "Reset credits", "Refresh Quota", `id="editSchedulerPriority"`, "account.schedulerPriority", "scheduler_priority", "Plugin priority", "插件优先级"} {
+	for _, want := range []string{"quota-bar", "quota-remaining", "quotaResetTime", "quota-reset-label", "formatQuotaResetLabels", "label+' reset: '", "resetRemainingText", "Math.floor(remaining/minute)", "Math.floor(remaining/hour)", "Math.floor(remaining/day)", "已到期", "SORTED_INLINE_TRANSLATIONS", "right[0].length-left[0].length", "Circuit counts", "localeColon", "resetCreditCount", "Number(value)===1?'time':'times'", "data-i18n-aria", "queue.aria", "renderAccounts(STATUS.accounts||[])", "log.quota.refresh_success", "log.scheduler.fallback", "notice.dataset.i18nKey", "date.toLocaleString(dateLocale()", "storedLocale", "parentLocale", "window.parent.document.documentElement.lang", "watchParentLocale", "if(storedLocale())return", "attributeFilter:['lang']", "detectLocale(){return storedLocale()||parentLocale()||'en'}", "editDialog", "logList", "openEdit", "exportLogs", "codex-fleet-manager-logs.json", "maxLogEntries", "logRetention", "refreshOneQuota", "togglePin", "createPinButton", "priority=pinned?0:999", "actions.pinAccount", "actions.unpinAccount", "notice.accountPinned", "notice.accountUnpinned", "refreshStatus", "renderAccounts", "renderMetrics", "metricNextAuthID", "metricMonthlyMode", "metricLastSelected", `id="managementKeyField"`, "managementKey", "rememberManagementKey", "MANAGEMENT_KEY_STORAGE_KEY", "restoreRememberedManagementKey", "syncRememberedManagementKey", "syncManagementKeyVisibility", "field.hidden=remember.checked", "codex-fleet-manager-management-key-v1", "loadStatus", "MANAGEMENT_BASE", "/v0/management/plugins/codex-fleet-manager", "authHeaders()", "localeSelect", "TRANSLATIONS", "codex-fleet-manager-locale-v1", "Scheduler Settings", "Account Queue", "INLINE_TRANSLATIONS", "Reset credits", "Refresh Quota", `id="editSchedulerPriority"`, "account.schedulerPriority", "scheduler_priority", "Plugin priority", "插件优先级"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("html missing marker %q: %s", want, html)
 		}
@@ -723,7 +723,7 @@ func TestStatusHTMLUsesManagementAPIActionsModalProgressAndLogs(t *testing.T) {
 			t.Fatalf("html missing quota color marker %q: %s", want, html)
 		}
 	}
-	for _, forbidden := range []string{"RESOURCE_ENDPOINT", "PUBLIC_STATUS_BASE", "requestPublicStatus", "metricSchedulerState", "metrics.scheduler", "/v0/resource/plugins/codex-quota-scheduler/status?action", "requestPlugin(action,options)", "details class=\"editor\"", "action_token"} {
+	for _, forbidden := range []string{"RESOURCE_ENDPOINT", "PUBLIC_STATUS_BASE", "requestPublicStatus", "metricSchedulerState", "metrics.scheduler", "/v0/resource/plugins/codex-fleet-manager/status?action", "requestPlugin(action,options)", "details class=\"editor\"", "action_token"} {
 		if strings.Contains(html, forbidden) {
 			t.Fatalf("html still contains removed marker %q: %s", forbidden, html)
 		}
@@ -1121,7 +1121,7 @@ func TestStatusJSONIncludesCircuitStateAndResetCredits(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: "GET",
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now)
 	if resp.StatusCode != http.StatusOK {
@@ -1155,7 +1155,7 @@ func TestSettingsEndpointUpdatesConfigAndPersistsDefaultState(t *testing.T) {
 	store := NewPluginState(DefaultConfig())
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodPut,
-		Path:   "/plugins/codex-quota-scheduler/settings",
+		Path:   "/plugins/codex-fleet-manager/settings",
 		Body:   []byte(`{"handle_enabled":false,"monthly_mode":"priority","quota_refresh_interval":"45s","stale_after":"15m","enable_usage_feedback":false,"max_refresh_concurrency":2,"max_log_entries":25,"log_retention":"3h"}`),
 	}, time.Now())
 	if resp.StatusCode != http.StatusOK {
@@ -1399,7 +1399,7 @@ func TestStatusJSONIncludesQuotaWindowsForProgressBars(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: "GET",
-		Path:   "/plugins/codex-quota-scheduler/status",
+		Path:   "/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, now)
 	if resp.StatusCode != http.StatusOK {
@@ -1510,7 +1510,7 @@ func TestManagementSettingsEndpointUpdatesConfig(t *testing.T) {
 	store := NewPluginState(DefaultConfig())
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodPut,
-		Path:   "/v0/management/plugins/codex-quota-scheduler/settings",
+		Path:   "/v0/management/plugins/codex-fleet-manager/settings",
 		Body:   []byte(`{"handle_enabled":false,"monthly_mode":"priority","quota_refresh_interval":"45m","stale_after":"6h","enable_usage_feedback":false,"max_refresh_concurrency":2,"max_log_entries":30,"log_retention":"4h"}`),
 	}, time.Now())
 	if resp.StatusCode != http.StatusOK {
@@ -1559,7 +1559,7 @@ func TestResourceStatusQueryActionsDoNotMutateState(t *testing.T) {
 	for action, payload := range actions {
 		resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 			Method: http.MethodGet,
-			Path:   "/v0/resource/plugins/codex-quota-scheduler/status",
+			Path:   "/v0/resource/plugins/codex-fleet-manager/status",
 			Query: url.Values{
 				"action":  []string{action},
 				"payload": []string{payload},
@@ -1587,7 +1587,7 @@ func TestResourceStatusFormatJSONStillRendersHTMLShell(t *testing.T) {
 	store := NewPluginState(DefaultConfig())
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodGet,
-		Path:   "/v0/resource/plugins/codex-quota-scheduler/status",
+		Path:   "/v0/resource/plugins/codex-fleet-manager/status",
 		Query:  url.Values{"format": []string{"json"}},
 	}, time.Now())
 	if resp.StatusCode != http.StatusOK {
@@ -1615,7 +1615,7 @@ func TestResourceStatusRendersUsablePluginPage(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodGet,
-		Path:   "/v0/resource/plugins/codex-quota-scheduler/status",
+		Path:   "/v0/resource/plugins/codex-fleet-manager/status",
 	}, now)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("StatusCode = %d, want %d; body=%s", resp.StatusCode, http.StatusOK, resp.Body)
@@ -1631,7 +1631,7 @@ func TestResourceStatusRendersUsablePluginPage(t *testing.T) {
 			t.Fatalf("resource status leaked privileged status marker %q: %s", forbidden, body)
 		}
 	}
-	for _, want := range []string{"logList", "managementKey", "loadStatus", "MANAGEMENT_BASE", "/v0/management/plugins/codex-quota-scheduler", "authHeaders()", "let STATUS=", `"shell":true`, "statusLoaded=!STATUS.shell", "notice.statusLoaded", "refreshStatus", "只要调度器启动了，它就会在后台自动运行，无需保持页面开启"} {
+	for _, want := range []string{"logList", "managementKey", "loadStatus", "MANAGEMENT_BASE", "/v0/management/plugins/codex-fleet-manager", "authHeaders()", "let STATUS=", `"shell":true`, "statusLoaded=!STATUS.shell", "notice.statusLoaded", "refreshStatus", "只要调度器启动了，它就会在后台自动运行，无需保持页面开启"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("resource status missing usable plugin page marker %q: %s", want, body)
 		}
@@ -1679,7 +1679,7 @@ func TestResourceStatusDataIsNotPublicWithoutManagementKey(t *testing.T) {
 	store.RecordLog("warn", "quota.reset_probe_failed", "Codex reset probe failed", map[string]any{"error": "probe failed at " + codexResetProbeEndpoint}, now)
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodGet,
-		Path:   "/v0/resource/plugins/codex-quota-scheduler/status-data",
+		Path:   "/v0/resource/plugins/codex-fleet-manager/status-data",
 		Query:  url.Values{"action": []string{"refresh"}, "payload": []string{"{}"}},
 	}, now)
 	if resp.StatusCode != http.StatusNotFound {
@@ -1705,7 +1705,7 @@ func TestManagementAccountEndpointUpdatesAnnotation(t *testing.T) {
 	store := NewPluginState(DefaultConfig())
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodPatch,
-		Path:   "/v0/management/plugins/codex-quota-scheduler/annotations/account",
+		Path:   "/v0/management/plugins/codex-fleet-manager/annotations/account",
 		Body:   []byte(`{"auth_id":"auth-1","alias":"工作账号","group_id":"team-a","tags":["team","paid"],"notes":"常用"}`),
 	}, time.Now())
 	if resp.StatusCode != http.StatusOK {
@@ -1735,7 +1735,7 @@ func TestManagementAccountEndpointUpdatesAndResetsSchedulerPriority(t *testing.T
 	} {
 		resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 			Method: http.MethodPatch,
-			Path:   "/v0/management/plugins/codex-quota-scheduler/annotations/account",
+			Path:   "/v0/management/plugins/codex-fleet-manager/annotations/account",
 			Body:   []byte(test.body),
 		}, time.Now())
 		if resp.StatusCode != http.StatusOK {
@@ -1779,7 +1779,7 @@ func TestManagementAccountEndpointClearsTags(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodPatch,
-		Path:   "/v0/management/plugins/codex-quota-scheduler/annotations/account",
+		Path:   "/v0/management/plugins/codex-fleet-manager/annotations/account",
 		Body:   []byte(`{"auth_id":"auth-1","tags":[]}`),
 	}, time.Now())
 	if resp.StatusCode != http.StatusOK {
@@ -1805,7 +1805,7 @@ func TestManagementGroupEndpointAllowsClearingFields(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodPatch,
-		Path:   "/v0/management/plugins/codex-quota-scheduler/annotations/group",
+		Path:   "/v0/management/plugins/codex-fleet-manager/annotations/group",
 		Body:   []byte(`{"id":"1","name":"","notes":"","color":""}`),
 	}, time.Now())
 	if resp.StatusCode != http.StatusOK {
@@ -1837,7 +1837,7 @@ func TestResourceExportImportRoundTrip(t *testing.T) {
 
 	exportResp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodGet,
-		Path:   "/v0/management/plugins/codex-quota-scheduler/export",
+		Path:   "/v0/management/plugins/codex-fleet-manager/export",
 	}, time.Now())
 	if exportResp.StatusCode != http.StatusOK {
 		t.Fatalf("export StatusCode = %d, want %d; body=%s", exportResp.StatusCode, http.StatusOK, exportResp.Body)
@@ -1846,7 +1846,7 @@ func TestResourceExportImportRoundTrip(t *testing.T) {
 	imported := NewPluginState(DefaultConfig())
 	importResp := HandleManagementRequest(imported, pluginapi.ManagementRequest{
 		Method: http.MethodPost,
-		Path:   "/v0/management/plugins/codex-quota-scheduler/import",
+		Path:   "/v0/management/plugins/codex-fleet-manager/import",
 		Body:   exportResp.Body,
 	}, time.Now())
 	if importResp.StatusCode != http.StatusOK {
@@ -1875,7 +1875,7 @@ func TestManagementSettingsAndImportRejectNonChatGPTQuotaEndpoint(t *testing.T) 
 	store := NewPluginState(DefaultConfig())
 	settingsResp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodPut,
-		Path:   "/v0/management/plugins/codex-quota-scheduler/settings",
+		Path:   "/v0/management/plugins/codex-fleet-manager/settings",
 		Body:   []byte(`{"handle_enabled":true,"monthly_mode":"expiry_order","quota_refresh_interval":"30m","stale_after":"5h","enable_usage_feedback":true,"max_refresh_concurrency":1,"quota_endpoint":"https://example.test/usage","max_log_entries":2000,"log_retention":"24h"}`),
 	}, time.Now())
 	if settingsResp.StatusCode != http.StatusBadRequest {
@@ -1887,7 +1887,7 @@ func TestManagementSettingsAndImportRejectNonChatGPTQuotaEndpoint(t *testing.T) 
 
 	importResp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodPost,
-		Path:   "/v0/management/plugins/codex-quota-scheduler/import",
+		Path:   "/v0/management/plugins/codex-fleet-manager/import",
 		Body:   []byte(`{"config":{"HandleEnabled":true,"MonthlyMode":"expiry_order","QuotaRefreshInterval":1800000000000,"StaleAfter":18000000000000,"MaxRefreshConcurrency":1,"QuotaEndpoint":"https://example.test/usage","MaxLogEntries":2000,"LogRetention":86400000000000}}`),
 	}, time.Now())
 	if importResp.StatusCode != http.StatusBadRequest {
@@ -1905,7 +1905,7 @@ func TestLogsEndpointReturnsSchedulerDecision(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: http.MethodGet,
-		Path:   "/v0/management/plugins/codex-quota-scheduler/logs",
+		Path:   "/v0/management/plugins/codex-fleet-manager/logs",
 	}, now)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("StatusCode = %d, want %d; body=%s", resp.StatusCode, http.StatusOK, resp.Body)
@@ -1934,7 +1934,7 @@ func TestManagementLogsExposeProbeLifecycleWithoutSensitiveValues(t *testing.T) 
 
 	resp := HandleManagementRequest(r.state, pluginapi.ManagementRequest{
 		Method:  http.MethodGet,
-		Path:    "/v0/management/plugins/codex-quota-scheduler/status",
+		Path:    "/v0/management/plugins/codex-fleet-manager/status",
 		Headers: http.Header{"Authorization": []string{"Bearer management-key"}},
 		Query:   url.Values{"format": []string{"json"}},
 	}, now)
@@ -1981,7 +1981,7 @@ func TestAnnotationsEndpointsNormalizePatchAndPersist(t *testing.T) {
 
 	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: "PATCH",
-		Path:   "/plugins/codex-quota-scheduler/annotations/account",
+		Path:   "/plugins/codex-fleet-manager/annotations/account",
 		Body:   []byte(`{"key":"auth:new","alias":" New ","tags":["alpha","alpha"," "],"group_id":"group-1"}`),
 	}, time.Now())
 	if resp.StatusCode != http.StatusOK {
@@ -2006,7 +2006,7 @@ func TestAnnotationsEndpointsNormalizePatchAndPersist(t *testing.T) {
 
 	resp = HandleManagementRequest(store, pluginapi.ManagementRequest{
 		Method: "PATCH",
-		Path:   "/plugins/codex-quota-scheduler/annotations/group",
+		Path:   "/plugins/codex-fleet-manager/annotations/group",
 		Body:   []byte(`{"id":"group-2","annotation":{"name":"Blue","tags":["x","x"],"color":"#00f"}}`),
 	}, time.Now())
 	if resp.StatusCode != http.StatusOK {
@@ -2029,7 +2029,7 @@ func TestAnnotationsPersistenceFailureDoesNotMutateMemory(t *testing.T) {
 		{
 			name:   "put",
 			method: http.MethodPut,
-			path:   "/plugins/codex-quota-scheduler/annotations",
+			path:   "/plugins/codex-fleet-manager/annotations",
 			body:   []byte(`{"accounts":{"auth:new":{"alias":"New"}}}`),
 			check: func(t *testing.T, state AnnotationState) {
 				if _, ok := state.Accounts["auth:new"]; ok {
@@ -2040,7 +2040,7 @@ func TestAnnotationsPersistenceFailureDoesNotMutateMemory(t *testing.T) {
 		{
 			name:   "patch account",
 			method: http.MethodPatch,
-			path:   "/plugins/codex-quota-scheduler/annotations/account",
+			path:   "/plugins/codex-fleet-manager/annotations/account",
 			body:   []byte(`{"key":"auth:new","alias":"New"}`),
 			check: func(t *testing.T, state AnnotationState) {
 				if _, ok := state.Accounts["auth:new"]; ok {
@@ -2051,7 +2051,7 @@ func TestAnnotationsPersistenceFailureDoesNotMutateMemory(t *testing.T) {
 		{
 			name:   "patch group",
 			method: http.MethodPatch,
-			path:   "/plugins/codex-quota-scheduler/annotations/group",
+			path:   "/plugins/codex-fleet-manager/annotations/group",
 			body:   []byte(`{"id":"group-new","name":"New"}`),
 			check: func(t *testing.T, state AnnotationState) {
 				if _, ok := state.Groups["group-new"]; ok {

@@ -51,9 +51,22 @@ func TestProbeOnProvisionalRosterIsExplicitRiskOption(t *testing.T) {
 	}
 }
 
-func TestPluginRegistrationUsesV021SourceVersion(t *testing.T) {
-	if got := PluginRegistration().Metadata.Version; got != "0.2.1" {
-		t.Fatalf("plugin registration version = %q, want 0.2.1", got)
+func TestPluginRegistrationUsesInitialFleetVersion(t *testing.T) {
+	if got := PluginRegistration().Metadata.Version; got != "0.1.0" {
+		t.Fatalf("plugin registration version = %q, want 0.1.0", got)
+	}
+}
+
+func TestPluginIdentityIsIndependent(t *testing.T) {
+	reg := PluginRegistration()
+	if PluginID != "codex-fleet-manager" {
+		t.Fatalf("PluginID = %q, want codex-fleet-manager", PluginID)
+	}
+	if PluginDisplayName != "Codex Fleet Manager" {
+		t.Fatalf("PluginDisplayName = %q", PluginDisplayName)
+	}
+	if reg.Metadata.Name != PluginID || reg.Metadata.Author != "doer-ee" || reg.Metadata.GitHubRepository != "https://github.com/doer-ee/cpa-plugin-codex-fleet-manager" {
+		t.Fatalf("unexpected Fleet metadata: %#v", reg.Metadata)
 	}
 }
 
@@ -62,10 +75,10 @@ func TestReleaseVersionMetadataConsistent(t *testing.T) {
 		path string
 		want []string
 	}{
-		{"config.go", []string{`var pluginVersion = "0.2.1"`}},
-		{"Makefile", []string{"VERSION ?= 0.2.1"}},
-		{"README.md", []string{"## v0.2.1 Highlights", "make package VERSION=0.2.1", "make checksums VERSION=0.2.1", "git tag -a v0.2.1 -m \"v0.2.1\"", "git push origin v0.2.1"}},
-		{"README.zh-CN.md", []string{"## v0.2.1 主要更新", "make package VERSION=0.2.1", "make checksums VERSION=0.2.1", "git tag -a v0.2.1 -m \"v0.2.1\"", "git push origin v0.2.1"}},
+		{"config.go", []string{`var pluginVersion = "0.1.0"`}},
+		{"Makefile", []string{"VERSION ?= 0.1.0"}},
+		{"README.md", []string{"## v0.1.0 Highlights", "make package VERSION=0.1.0", "make checksums VERSION=0.1.0", "git tag -a v0.1.0 -m \"v0.1.0\"", "git push origin v0.1.0"}},
+		{"README.zh-CN.md", []string{"## v0.1.0 主要更新", "make package VERSION=0.1.0", "make checksums VERSION=0.1.0", "git tag -a v0.1.0 -m \"v0.1.0\"", "git push origin v0.1.0"}},
 	} {
 		contents, err := os.ReadFile(check.path)
 		if err != nil {

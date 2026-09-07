@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jeffery/codex-quota-scheduler/internal/refactorgate"
+	"github.com/doer-ee/cpa-plugin-codex-fleet-manager/internal/refactorgate"
 )
 
 func main() {

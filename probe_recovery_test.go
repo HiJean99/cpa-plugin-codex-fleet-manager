@@ -2,7 +2,7 @@ package main
 
 import (
 	"errors"
-	"github.com/jeffery/codex-quota-scheduler/testsupport"
+	"github.com/doer-ee/cpa-plugin-codex-fleet-manager/testsupport"
 	"os"
 	"path/filepath"
 	"regexp"

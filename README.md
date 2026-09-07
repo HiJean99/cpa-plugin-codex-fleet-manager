@@ -1,24 +1,25 @@
-# Codex Quota Scheduler
+# Codex Fleet Manager
 
 [简体中文](README.zh-CN.md) | English
 
-`codex-quota-scheduler` is a dynamic library plugin for CLIProxyAPI (CPA). It
-provides a quota-aware, optimized Fill First scheduler for Codex accounts, so
-CPA selects accounts by real usability instead of relying on a static account
-order alone.
+`codex-fleet-manager` is a dynamic library plugin for CLIProxyAPI (CPA). It
+provides quota-aware scheduling, account-health monitoring, reset-window
+activation, and account annotations for Codex accounts.
 
-## v0.2.1 Highlights
+Codex Fleet Manager is independently maintained and distributed under the MIT
+License. It preserves the original project's copyright and license notices;
+it is not an official release or endorsement from the original author.
 
-- Existing installations safely migrate their lazy-reset baselines; fresh
-  installations observe the first confirmed lazy reset window before activation.
-- While normal refresh is dormant, the opt-in Probe continues read-only
-  observation at the quota refresh interval with a 30-minute minimum.
-- A compact activation request is sent only after strict lazy-window evidence;
-  after a confirmed reset, the window re-arms for the next cycle.
-- Persisted state and per-window single-flight coordination preserve safe
-  behavior across crashes and concurrent triggers.
+## v0.1.0 Highlights
 
-## v0.2.0 Highlights
+- Independent plugin identity: dedicated CPA API routes, browser storage,
+  state directory, dynamic-library names, and release archives.
+- Optimized Fill First scheduling based on real account availability and quota
+  pressure rather than a static account order.
+- Optional reset-window activation and deadline-driven quota refresh.
+- Bilingual Management UI, account annotations, priorities, and JSON backup.
+
+## Included scheduler capabilities
 
 - Availability now comes before plugin priority: an unusable high-priority
   account can no longer outrank a usable account.
@@ -183,28 +184,26 @@ Keep this setting disabled unless you understand and accept that risk.
 
 ## Installation
 
-The recommended method is CPA's Plugin Store. Find **Codex Quota Scheduler**,
-review the third-party plugin warning, and install the latest stable release.
-
-For manual installation, download the archive for your platform from the
-[latest GitHub release](https://github.com/JefferyZhang2019/cpa-plugin-codex-quota-scheduler/releases/latest):
+Until Codex Fleet Manager is accepted by CPA's Plugin Store, download the
+archive for your platform from the
+[latest GitHub release](https://github.com/doer-ee/cpa-plugin-codex-fleet-manager/releases/latest):
 
 ```text
-codex-quota-scheduler_<version>_<goos>_<goarch>.zip
+codex-fleet-manager_<version>_<goos>_<goarch>.zip
 ```
 
 Extract the library from the archive root and place it in CPA's matching plugin
 directory:
 
-- macOS: `codex-quota-scheduler.dylib`
-- Linux and FreeBSD: `codex-quota-scheduler.so`
-- Windows: `codex-quota-scheduler.dll`
+- macOS: `codex-fleet-manager.dylib`
+- Linux and FreeBSD: `codex-fleet-manager.so`
+- Windows: `codex-fleet-manager.dll`
 
 Example:
 
 ```bash
 mkdir -p /path/to/CLIProxyAPI/plugins/darwin/arm64
-cp codex-quota-scheduler.dylib /path/to/CLIProxyAPI/plugins/darwin/arm64/
+cp codex-fleet-manager.dylib /path/to/CLIProxyAPI/plugins/darwin/arm64/
 ```
 
 ## CPA Configuration
@@ -215,7 +214,7 @@ Enable plugins globally and enable this plugin:
 plugins:
   enabled: true
   configs:
-    codex-quota-scheduler:
+    codex-fleet-manager:
       enabled: true
       priority: 1 # CPA plugin registration/load priority
 ```
@@ -261,10 +260,10 @@ be redirected to an arbitrary host.
 
 ## Management UI
 
-Open **Codex Scheduler** from CPA Management Center, or visit:
+Open **Codex Fleet Manager** from CPA Management Center, or visit:
 
 ```text
-/v0/resource/plugins/codex-quota-scheduler/status
+/v0/resource/plugins/codex-fleet-manager/status
 ```
 
 The page provides:
@@ -281,9 +280,8 @@ The page provides:
 When embedded in CPA Management Center, the plugin initially follows CPA's
 current language: Chinese locales use Chinese, while every other locale defaults
 to English. A language explicitly selected inside the plugin is remembered and
-takes precedence on later visits. The registered CPA sidebar label is the English name
-**Codex Scheduler**, because the CPA plugin menu API accepts only one static
-label.
+takes precedence on later visits. The registered CPA sidebar label is
+**Codex Fleet Manager**.
 
 Protected data and actions require the CPA Management key. By default, the key
 remains only in the current browser page session. The optional **Remember
@@ -340,11 +338,11 @@ make build
 Build release archives and checksums:
 
 ```bash
-make package VERSION=0.2.1
-make checksums VERSION=0.2.1
+make package VERSION=0.1.0
+make checksums VERSION=0.1.0
 ```
 
-Windows users can build `dist/codex-quota-scheduler.dll` with:
+Windows users can build `dist/codex-fleet-manager.dll` with:
 
 ```powershell
 .\build.ps1
@@ -352,19 +350,19 @@ Windows users can build `dist/codex-quota-scheduler.dll` with:
 
 ## GitHub Releases
 
-Pushing a dotted numeric tag such as `v0.2.1` runs the GitHub Actions release
+Pushing a dotted numeric tag such as `v0.1.0` runs the GitHub Actions release
 workflow. It tests the repository and publishes platform archives plus
 `checksums.txt`:
 
 ```bash
-git tag -a v0.2.1 -m "v0.2.1"
-git push origin v0.2.1
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
 ```
 
 Release archives use this naming scheme:
 
 ```text
-codex-quota-scheduler_<version>_<goos>_<goarch>.zip
+codex-fleet-manager_<version>_<goos>_<goarch>.zip
 ```
 
 ## Management API
@@ -372,22 +370,22 @@ codex-quota-scheduler_<version>_<goos>_<goarch>.zip
 The UI resource is served from:
 
 ```text
-GET /v0/resource/plugins/codex-quota-scheduler/status
+GET /v0/resource/plugins/codex-fleet-manager/status
 ```
 
 Privileged operations require the CPA Management key:
 
 ```text
-GET  /v0/management/plugins/codex-quota-scheduler/status?format=json
-GET  /v0/management/plugins/codex-quota-scheduler/logs
-GET  /v0/management/plugins/codex-quota-scheduler/export
-PUT  /v0/management/plugins/codex-quota-scheduler/settings
-POST /v0/management/plugins/codex-quota-scheduler/refresh
-POST /v0/management/plugins/codex-quota-scheduler/refresh/account
-POST /v0/management/plugins/codex-quota-scheduler/import
-PUT  /v0/management/plugins/codex-quota-scheduler/annotations
-PATCH /v0/management/plugins/codex-quota-scheduler/annotations/account
-PATCH /v0/management/plugins/codex-quota-scheduler/annotations/group
+GET  /v0/management/plugins/codex-fleet-manager/status?format=json
+GET  /v0/management/plugins/codex-fleet-manager/logs
+GET  /v0/management/plugins/codex-fleet-manager/export
+PUT  /v0/management/plugins/codex-fleet-manager/settings
+POST /v0/management/plugins/codex-fleet-manager/refresh
+POST /v0/management/plugins/codex-fleet-manager/refresh/account
+POST /v0/management/plugins/codex-fleet-manager/import
+PUT  /v0/management/plugins/codex-fleet-manager/annotations
+PATCH /v0/management/plugins/codex-fleet-manager/annotations/account
+PATCH /v0/management/plugins/codex-fleet-manager/annotations/group
 ```
 
 ## License

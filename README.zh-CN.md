@@ -1,19 +1,23 @@
-# Codex 额度调度器
+# Codex Fleet Manager
 
 简体中文 | [English](README.md)
 
-`codex-quota-scheduler` 是 CLIProxyAPI（CPA）的动态库插件。它为 Codex
-账号提供额度感知的优化版 Fill First 调度，让 CPA 按账号的真实可用性选择账号，
-而不只是依赖固定的账号顺序。
+`codex-fleet-manager` 是 CLIProxyAPI（CPA）的动态库插件，为 Codex 账号提供
+额度感知调度、账号健康监控、重置窗口激活和账号注释管理。
 
-## v0.2.1 主要更新
+Codex Fleet Manager 由独立维护者发布，采用 MIT License。它保留原项目的
+版权和许可证声明；这不是原作者的官方发布或背书。
 
-- 已有安装会安全迁移延迟重置基线；全新安装会先观察首个确认的延迟重置窗口，再执行激活。
-- 即使普通刷新处于休眠状态，选择启用的 Probe 仍会按额度刷新间隔执行只读观察，最短 30 分钟。
-- 只有具备严格的延迟窗口证据时才发送极小的激活请求；确认重置后，该窗口会为下个周期重新布防。
-- 持久化状态与按窗口 single-flight 协调可在崩溃和并发触发时保持安全行为。
+## v0.1.0 主要更新
 
-## v0.2.0 主要更新
+- 使用独立插件身份：专属 CPA API 路径、浏览器存储、状态目录、动态库名和
+  发布压缩包。
+- 根据真实账号可用性和额度压力执行优化版 Fill First 调度，而不是依赖静态
+  账号顺序。
+- 支持可选的重置窗口激活和截止时间驱动的额度刷新。
+- 提供中英文 Management UI、账号注释、优先级和 JSON 备份。
+
+## 内置调度能力
 
 - 真实可用性优先于插件优先级：不可用的高优先级账号不会再排到可用账号前面。
 - 不可用账号按预计恢复时间从早到晚显示，无法确定恢复时间的账号放在最后。
@@ -154,28 +158,25 @@ CPA 无法确认当前 Codex 账号列表和优先级时，普通刷新和新周
 
 ## 安装
 
-推荐使用 CPA 插件商店。找到 **Codex Quota Scheduler**，阅读第三方插件风险提示，
-然后安装最新稳定版本。
-
-如需手动安装，请从
-[最新 GitHub Release](https://github.com/JefferyZhang2019/cpa-plugin-codex-quota-scheduler/releases/latest)
+在 Codex Fleet Manager 被 CPA 插件商店收录前，请从
+[最新 GitHub Release](https://github.com/doer-ee/cpa-plugin-codex-fleet-manager/releases/latest)
 下载对应平台的压缩包：
 
 ```text
-codex-quota-scheduler_<version>_<goos>_<goarch>.zip
+codex-fleet-manager_<version>_<goos>_<goarch>.zip
 ```
 
 从压缩包根目录解压动态库，并放入 CPA 对应平台的插件目录：
 
-- macOS：`codex-quota-scheduler.dylib`
-- Linux 和 FreeBSD：`codex-quota-scheduler.so`
-- Windows：`codex-quota-scheduler.dll`
+- macOS：`codex-fleet-manager.dylib`
+- Linux 和 FreeBSD：`codex-fleet-manager.so`
+- Windows：`codex-fleet-manager.dll`
 
 示例：
 
 ```bash
 mkdir -p /path/to/CLIProxyAPI/plugins/darwin/arm64
-cp codex-quota-scheduler.dylib /path/to/CLIProxyAPI/plugins/darwin/arm64/
+cp codex-fleet-manager.dylib /path/to/CLIProxyAPI/plugins/darwin/arm64/
 ```
 
 ## CPA 配置
@@ -186,7 +187,7 @@ cp codex-quota-scheduler.dylib /path/to/CLIProxyAPI/plugins/darwin/arm64/
 plugins:
   enabled: true
   configs:
-    codex-quota-scheduler:
+    codex-fleet-manager:
       enabled: true
       priority: 1 # CPA plugin registration/load priority
 ```
@@ -227,10 +228,10 @@ log_retention: 24h
 
 ## 管理界面
 
-从 CPA Management Center 打开 **Codex Scheduler**，或者访问：
+从 CPA Management Center 打开 **Codex Fleet Manager**，或者访问：
 
 ```text
-/v0/resource/plugins/codex-quota-scheduler/status
+/v0/resource/plugins/codex-fleet-manager/status
 ```
 
 页面提供：
@@ -246,8 +247,8 @@ log_retention: 24h
 
 嵌入 CPA Management Center 时，插件初次会跟随 CPA 当前语言：中文 locale 使用
 中文，其余 locale 默认使用英文。如果曾在插件内手动选择语言，该选择会被记住，
-后续访问时优先使用。CPA 插件菜单 API 只能注册一个静态名称，因此侧边栏统一显示
-英文名称 **Codex Scheduler**。
+后续访问时优先使用。CPA 侧边栏统一显示英文名称
+**Codex Fleet Manager**。
 
 受保护的数据和操作需要 CPA 管理密钥。默认情况下，密钥只保留在当前浏览器页面
 会话中。可选的「在此浏览器中记住管理密钥」设置会以未加密形式将密钥保存到
@@ -298,11 +299,11 @@ make build
 构建发布压缩包和校验文件：
 
 ```bash
-make package VERSION=0.2.1
-make checksums VERSION=0.2.1
+make package VERSION=0.1.0
+make checksums VERSION=0.1.0
 ```
 
-Windows 用户可以用以下命令构建 `dist/codex-quota-scheduler.dll`：
+Windows 用户可以用以下命令构建 `dist/codex-fleet-manager.dll`：
 
 ```powershell
 .\build.ps1
@@ -310,18 +311,18 @@ Windows 用户可以用以下命令构建 `dist/codex-quota-scheduler.dll`：
 
 ## GitHub Release
 
-推送 `v0.2.1` 这类点分数字标签后，GitHub Actions 会运行发布流程。流程会测试
+推送 `v0.1.0` 这类点分数字标签后，GitHub Actions 会运行发布流程。流程会测试
 仓库，并发布各平台压缩包和 `checksums.txt`：
 
 ```bash
-git tag -a v0.2.1 -m "v0.2.1"
-git push origin v0.2.1
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
 ```
 
 发布包使用以下命名方式：
 
 ```text
-codex-quota-scheduler_<version>_<goos>_<goarch>.zip
+codex-fleet-manager_<version>_<goos>_<goarch>.zip
 ```
 
 ## Management API
@@ -329,22 +330,22 @@ codex-quota-scheduler_<version>_<goos>_<goarch>.zip
 界面资源路由：
 
 ```text
-GET /v0/resource/plugins/codex-quota-scheduler/status
+GET /v0/resource/plugins/codex-fleet-manager/status
 ```
 
 受保护操作需要 CPA 管理密钥：
 
 ```text
-GET  /v0/management/plugins/codex-quota-scheduler/status?format=json
-GET  /v0/management/plugins/codex-quota-scheduler/logs
-GET  /v0/management/plugins/codex-quota-scheduler/export
-PUT  /v0/management/plugins/codex-quota-scheduler/settings
-POST /v0/management/plugins/codex-quota-scheduler/refresh
-POST /v0/management/plugins/codex-quota-scheduler/refresh/account
-POST /v0/management/plugins/codex-quota-scheduler/import
-PUT  /v0/management/plugins/codex-quota-scheduler/annotations
-PATCH /v0/management/plugins/codex-quota-scheduler/annotations/account
-PATCH /v0/management/plugins/codex-quota-scheduler/annotations/group
+GET  /v0/management/plugins/codex-fleet-manager/status?format=json
+GET  /v0/management/plugins/codex-fleet-manager/logs
+GET  /v0/management/plugins/codex-fleet-manager/export
+PUT  /v0/management/plugins/codex-fleet-manager/settings
+POST /v0/management/plugins/codex-fleet-manager/refresh
+POST /v0/management/plugins/codex-fleet-manager/refresh/account
+POST /v0/management/plugins/codex-fleet-manager/import
+PUT  /v0/management/plugins/codex-fleet-manager/annotations
+PATCH /v0/management/plugins/codex-fleet-manager/annotations/account
+PATCH /v0/management/plugins/codex-fleet-manager/annotations/group
 ```
 
 ## 许可证
