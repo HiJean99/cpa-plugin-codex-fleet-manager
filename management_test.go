@@ -713,7 +713,7 @@ func TestStatusHTMLUsesManagementAPIActionsModalProgressAndLogs(t *testing.T) {
 	}
 	html := string(resp.Body)
 	lower := strings.ToLower(html)
-	for _, want := range []string{"quota-bar", "quota-remaining", "quotaResetTime", "quota-reset-label", "formatQuotaResetLabels", "label+' reset: '", "resetRemainingText", "Math.floor(remaining/minute)", "Math.floor(remaining/hour)", "Math.floor(remaining/day)", "已到期", "SORTED_INLINE_TRANSLATIONS", "right[0].length-left[0].length", "Circuit counts", "localeColon", "resetCreditCount", "Number(value)===1?'time':'times'", "data-i18n-aria", "queue.aria", "renderAccounts(STATUS.accounts||[])", "log.quota.refresh_success", "log.scheduler.fallback", "notice.dataset.i18nKey", "date.toLocaleString(dateLocale()", "storedLocale", "parentLocale", "window.parent.document.documentElement.lang", "watchParentLocale", "if(storedLocale())return", "attributeFilter:['lang']", "detectLocale(){return storedLocale()||parentLocale()||'en'}", "editDialog", "logList", "openEdit", "exportLogs", "codex-quota-scheduler-logs.json", "maxLogEntries", "logRetention", "refreshOneQuota", "refreshStatus", "renderAccounts", "renderMetrics", "metricNextAuthID", "metricMonthlyMode", "metricLastSelected", `id="managementKeyField"`, "managementKey", "rememberManagementKey", "MANAGEMENT_KEY_STORAGE_KEY", "restoreRememberedManagementKey", "syncRememberedManagementKey", "syncManagementKeyVisibility", "field.hidden=remember.checked", "codex-quota-scheduler-management-key-v1", "loadStatus", "MANAGEMENT_BASE", "/v0/management/plugins/codex-quota-scheduler", "authHeaders()", "localeSelect", "TRANSLATIONS", "codex-quota-scheduler-locale-v1", "Scheduler Settings", "Account Queue", "INLINE_TRANSLATIONS", "Reset credits", "Refresh Quota", `id="editSchedulerPriority"`, "account.schedulerPriority", "scheduler_priority", "Plugin priority", "插件优先级"} {
+	for _, want := range []string{"quota-bar", "quota-remaining", "quotaResetTime", "quota-reset-label", "formatQuotaResetLabels", "label+' reset: '", "resetRemainingText", "Math.floor(remaining/minute)", "Math.floor(remaining/hour)", "Math.floor(remaining/day)", "已到期", "SORTED_INLINE_TRANSLATIONS", "right[0].length-left[0].length", "Circuit counts", "localeColon", "resetCreditCount", "Number(value)===1?'time':'times'", "data-i18n-aria", "queue.aria", "renderAccounts(STATUS.accounts||[])", "log.quota.refresh_success", "log.scheduler.fallback", "notice.dataset.i18nKey", "date.toLocaleString(dateLocale()", "storedLocale", "parentLocale", "window.parent.document.documentElement.lang", "watchParentLocale", "if(storedLocale())return", "attributeFilter:['lang']", "detectLocale(){return storedLocale()||parentLocale()||'en'}", "editDialog", "logList", "openEdit", "exportLogs", "codex-quota-scheduler-logs.json", "maxLogEntries", "logRetention", "refreshOneQuota", "togglePin", "createPinButton", "priority=pinned?0:999", "actions.pinAccount", "actions.unpinAccount", "notice.accountPinned", "notice.accountUnpinned", "refreshStatus", "renderAccounts", "renderMetrics", "metricNextAuthID", "metricMonthlyMode", "metricLastSelected", `id="managementKeyField"`, "managementKey", "rememberManagementKey", "MANAGEMENT_KEY_STORAGE_KEY", "restoreRememberedManagementKey", "syncRememberedManagementKey", "syncManagementKeyVisibility", "field.hidden=remember.checked", "codex-quota-scheduler-management-key-v1", "loadStatus", "MANAGEMENT_BASE", "/v0/management/plugins/codex-quota-scheduler", "authHeaders()", "localeSelect", "TRANSLATIONS", "codex-quota-scheduler-locale-v1", "Scheduler Settings", "Account Queue", "INLINE_TRANSLATIONS", "Reset credits", "Refresh Quota", `id="editSchedulerPriority"`, "account.schedulerPriority", "scheduler_priority", "Plugin priority", "插件优先级"} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("html missing marker %q: %s", want, html)
 		}
@@ -731,6 +731,35 @@ func TestStatusHTMLUsesManagementAPIActionsModalProgressAndLogs(t *testing.T) {
 	for _, forbidden := range []string{"bearer ", "authorization", "cookie"} {
 		if strings.Contains(lower, forbidden) {
 			t.Fatalf("html contains sensitive field %q: %s", forbidden, html)
+		}
+	}
+}
+
+func TestStatusHTMLPinButtonReflectsPriority999(t *testing.T) {
+	now := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
+	store := NewPluginState(DefaultConfig())
+	store.SetAnnotations(AnnotationState{Accounts: map[string]AccountAnnotation{
+		"auth:pinned":   {SchedulerPriority: 999},
+		"auth:unpinned": {SchedulerPriority: 0},
+	}})
+	for _, id := range []string{"pinned", "unpinned"} {
+		account := weeklyAccount(id, 0, now.Add(24*time.Hour), false)
+		account.LastSuccessAt = now
+		store.UpsertQuota(account)
+	}
+
+	resp := HandleManagementRequest(store, pluginapi.ManagementRequest{Method: http.MethodGet, Path: "/status"}, now)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("StatusCode = %d, want %d; body=%s", resp.StatusCode, http.StatusOK, resp.Body)
+	}
+	html := string(resp.Body)
+	for _, want := range []string{
+		`class="ghost pinAccount pinned" data-auth-id="pinned" data-pinned="true" aria-pressed="true"`,
+		`class="ghost pinAccount " data-auth-id="unpinned" data-pinned="false" aria-pressed="false"`,
+		`actions.append(createPinButton(account),refresh,edit)`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("pin button missing state marker %q", want)
 		}
 	}
 }
