@@ -6,8 +6,8 @@
 额度感知调度、账号健康监控、重置窗口激活和账号注释管理。
 
 Codex Fleet Manager 基于 Jeffery Zhang 的 Codex Quota Scheduler 改进，
-由 Jacob 独立维护和发布，采用 MIT License，并保留原项目的版权和许可证声明。
-它不是原项目的官方继任版本，也未获原作者背书。
+由独立维护者发布，采用 MIT License，并保留原项目的版权和许可证声明。它不是
+原项目的官方继任版本，也未获原作者背书。
 
 ## v0.1.0 主要更新
 
