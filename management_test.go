@@ -757,6 +757,8 @@ func TestStatusHTMLPinButtonReflectsPriority999(t *testing.T) {
 		`class="ghost pinAccount pinned" data-auth-id="pinned" data-pinned="true" aria-pressed="true"`,
 		`class="ghost pinAccount " data-auth-id="unpinned" data-pinned="false" aria-pressed="false"`,
 		`actions.append(createPinButton(account),refresh,edit)`,
+		`.pinAccount svg{width:18px;height:18px;fill:none;stroke:currentColor`,
+		`<path d="M8.5 15.5 3 21"/>`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("pin button missing state marker %q", want)
