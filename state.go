@@ -434,6 +434,16 @@ func (s *PluginState) ApplyQuotaRefreshSuccessIfAdmissionCurrent(account Account
 	if !account.LastSuccessAt.IsZero() && account.LastError == "" {
 		account.Refresh = AccountRefreshState{}
 	}
+	// A quota refresh is authoritative evidence about the account that was
+	// actually queried. Clear a stale usage-feedback pause only when that
+	// refresh shows every applicable admission window is usable. Do not use a
+	// routed request success for this: it can belong to another account and is
+	// not a fresh quota reading.
+	if account.TemporaryExhausted && quotaRefreshConfirmsAvailability(account, now) {
+		account.TemporaryExhausted = false
+		account.TemporaryResetAt = time.Time{}
+		account.LastError = ""
+	}
 	applyCircuitSuccess(&account, NormalizeConfig(s.cfg), now)
 	key := accountStateKey(account)
 	if key == "" {
@@ -721,6 +731,19 @@ func markTemporaryExhausted(account *AccountState, resetAt time.Time, reason str
 	account.TemporaryResetAt = resetAt
 	account.LastError = reason
 	account.Circuit = CircuitBreakerState{State: CircuitStateClosed, EffectiveState: CircuitStateClosed}
+}
+
+func quotaRefreshConfirmsAvailability(account AccountState, now time.Time) bool {
+	if account.LastSuccessAt.IsZero() || account.Quota.LongWindow == nil || account.Quota.LongWindow.ResetAt.IsZero() || windowExhausted(account.Quota.LongWindow, now) {
+		return false
+	}
+	if account.Family != AccountFamilyWeekly && account.Family != AccountFamilyMonthly {
+		return false
+	}
+	if account.Quota.FiveHour == nil {
+		return true
+	}
+	return !account.Quota.FiveHour.ResetAt.IsZero() && !windowExhausted(account.Quota.FiveHour, now)
 }
 
 func applyCircuitFailure(account *AccountState, cfg Config, reason string, resetAt, now time.Time) {

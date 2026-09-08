@@ -71,6 +71,52 @@ func TestConditionalRefreshMutationsRejectStaleAdmissionVersion(t *testing.T) {
 	}
 }
 
+func TestQuotaRefreshClearsTemporaryExhaustionWhenFreshQuotaIsAvailable(t *testing.T) {
+	now := time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
+	store := NewPluginState(DefaultConfig())
+	version := store.ReplaceCPAAdmission(CPAAdmissionState{Observed: true, Priority: 1, AuthIDs: map[string]struct{}{"auth-1": {}}})
+	store.UpsertQuota(weeklyAccount("auth-1", 1, now.Add(7*24*time.Hour), false))
+	store.MarkAccountTemporaryExhausted("auth-1", now.Add(time.Hour), "usage_limit_reached")
+
+	fresh := store.Snapshot(now).Accounts[0]
+	fresh.Quota = weeklyAccount("auth-1", 1, now.Add(7*24*time.Hour), false).Quota
+	fresh.Family = AccountFamilyWeekly
+	fresh.LastSuccessAt = now
+	if !store.ApplyQuotaRefreshSuccessIfAdmissionCurrent(fresh, version, now) {
+		t.Fatal("fresh quota refresh was rejected")
+	}
+
+	account := store.Snapshot(now).Accounts[0]
+	if account.TemporaryExhausted || !account.TemporaryResetAt.IsZero() || account.LastError != "" {
+		t.Fatalf("stale temporary exhaustion was retained: %#v", account)
+	}
+	status, available, reason, _ := accountQueueState(account, now)
+	if status != QueueStatusAvailable || !available || reason != "" {
+		t.Fatalf("queue = status=%s available=%t reason=%q, want available", status, available, reason)
+	}
+}
+
+func TestQuotaRefreshDoesNotClearTemporaryExhaustionWhenFreshQuotaIsExhausted(t *testing.T) {
+	now := time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
+	store := NewPluginState(DefaultConfig())
+	version := store.ReplaceCPAAdmission(CPAAdmissionState{Observed: true, Priority: 1, AuthIDs: map[string]struct{}{"auth-1": {}}})
+	store.UpsertQuota(weeklyAccount("auth-1", 1, now.Add(7*24*time.Hour), false))
+	store.MarkAccountTemporaryExhausted("auth-1", now.Add(time.Hour), "usage_limit_reached")
+
+	fresh := store.Snapshot(now).Accounts[0]
+	fresh.Quota = weeklyAccount("auth-1", 1, now.Add(7*24*time.Hour), true).Quota
+	fresh.Family = AccountFamilyWeekly
+	fresh.LastSuccessAt = now
+	if !store.ApplyQuotaRefreshSuccessIfAdmissionCurrent(fresh, version, now) {
+		t.Fatal("fresh quota refresh was rejected")
+	}
+
+	account := store.Snapshot(now).Accounts[0]
+	if !account.TemporaryExhausted || !account.TemporaryResetAt.Equal(now.Add(time.Hour)) {
+		t.Fatalf("temporary exhaustion was incorrectly cleared: %#v", account)
+	}
+}
+
 func TestPluginStateUpsertsAndSnapshotsAccounts(t *testing.T) {
 	store := NewPluginState(DefaultConfig())
 	now := time.Date(2026, 6, 21, 9, 0, 0, 0, time.UTC)
