@@ -48,6 +48,7 @@ type ProbeEvent struct {
 	Snapshots           map[ProbeWindowKind]QuotaSnapshot
 	RefreshMode         RefreshMode
 	ObservationInterval time.Duration
+	ResetDriftThreshold time.Duration
 }
 type ProbeController struct {
 	mu      sync.Mutex
@@ -180,7 +181,11 @@ func (c *ProbeController) Advance(i AuthInstanceID, e ProbeEvent) []Intent {
 			strictAuthorized := false
 			if e.Kind == ProbeEventPrecheckResult && baseline.Kind == ProbeBaselineReset && snap.Valid && snap.ResetAt != nil && snap.Usage != nil {
 				migrated := baseline.SuspectedLazy
-				shifted := snap.ResetAt.After(baseline.ResetAt.Add(probeSkewTolerance))
+				driftThreshold := e.ResetDriftThreshold
+				if driftThreshold <= 0 {
+					driftThreshold = probeSkewTolerance
+				}
+				shifted := snap.ResetAt.After(baseline.ResetAt.Add(driftThreshold))
 				shiftedZeroCandidate = shifted && *snap.Usage == 0
 				if baseline.WindowKind == "" && compatibleLegacyProbeWindowKind(k, baseline, snap) {
 					baseline.WindowKind = snap.WindowKind

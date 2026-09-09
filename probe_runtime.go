@@ -123,7 +123,9 @@ func (r *QuotaRefresher) bootstrapProbeWindows() error {
 						if existing.Baseline.WindowKind == "" {
 							existing.Baseline.WindowKind = pair.w.Kind
 						}
-						if strictObservation && looksLikeStrictLazyObservation(observedAt, *pair.w, duration) {
+						shifted := pair.w.ResetAt.After(existing.Baseline.ResetAt.Add(r.probeDriftThreshold()))
+						requireSlide := r.resetProbeConfig().ResetProbeRequireResetAtSlide
+						if strictObservation && (!requireSlide || shifted) && looksLikeStrictLazyObservation(observedAt, *pair.w, duration) {
 							existing.Baseline.ResetAt = pair.w.ResetAt
 							existing.Baseline.Usage = *pair.w.UsedPercent
 							existing.Baseline.SuspectedLazy = true
@@ -159,7 +161,7 @@ func (r *QuotaRefresher) bootstrapProbeWindows() error {
 			state := ProbeWaitingReset
 			deadline := deadlineFor(base, now, observationInterval)
 			lazy := false
-			if strictObservation {
+			if strictObservation && !r.resetProbeConfig().ResetProbeRequireResetAtSlide {
 				_, lazy = firstObservationLazyWindow(observedAt, *pair.w)
 			}
 			if lazy {
@@ -197,12 +199,19 @@ func (r *QuotaRefresher) bootstrapProbeWindows() error {
 	return err
 }
 
-func (r *QuotaRefresher) probeObservationInterval() time.Duration {
-	interval := NormalizeConfig(r.state.Config()).QuotaRefreshInterval
-	if interval < probeUnknownResetRecheck {
-		return probeUnknownResetRecheck
+func (r *QuotaRefresher) resetProbeConfig() Config {
+	if r == nil || r.state == nil {
+		return DefaultConfig()
 	}
-	return interval
+	return NormalizeConfig(r.state.Config())
+}
+
+func (r *QuotaRefresher) probeObservationInterval() time.Duration {
+	return r.resetProbeConfig().ResetProbeObservationInterval
+}
+
+func (r *QuotaRefresher) probeDriftThreshold() time.Duration {
+	return r.resetProbeConfig().ResetProbeDriftThreshold
 }
 
 func (r *QuotaRefresher) persistProbeInstances(instances map[AuthInstanceID]struct{}) error {
@@ -1066,6 +1075,12 @@ func (r *QuotaRefresher) runTypedHeld(ctx context.Context, intent Intent, held *
 			}
 			status, authBlocked := err.(quotaStatusError)
 			authBlocked = authBlocked && status.status == http.StatusUnauthorized
+			if sent {
+				cooldownUntil := r.now().Add(r.resetProbeConfig().ResetProbeFailureCooldown)
+				if cooldownUntil.After(attempt.SuppressUntil) {
+					attempt.SuppressUntil = cooldownUntil
+				}
+			}
 			persistErr := r.persistProbeFailure(intent.Instance, attempt.AttemptID, p.Windows, sent, authBlocked, p.Binding.Login, attempt.SuppressUntil)
 			if persistErr != nil {
 				if !errors.Is(persistErr, ErrProbeAttemptChanged) {
@@ -1119,7 +1134,7 @@ func (r *QuotaRefresher) runTypedHeld(ctx context.Context, intent Intent, held *
 			return fail(err, false)
 		}
 		r.probeHoldMu.Lock()
-		r.probeController.Advance(intent.Instance, ProbeEvent{Kind: ProbeEventPrecheckResult, Now: r.now(), Snapshots: probeSnapshots(pre.Quota), ObservationInterval: r.probeObservationInterval()})
+		r.probeController.Advance(intent.Instance, ProbeEvent{Kind: ProbeEventPrecheckResult, Now: r.now(), Snapshots: probeSnapshots(pre.Quota), ObservationInterval: r.probeObservationInterval(), ResetDriftThreshold: r.probeDriftThreshold()})
 		var lazy []ProbeWindowKind
 		for _, k := range p.Windows {
 			if w, ok := r.probeController.Window(intent.Instance, k); ok && w.State == ProbeSentAwaitingVerify {
@@ -1146,7 +1161,7 @@ func (r *QuotaRefresher) runTypedHeld(ctx context.Context, intent Intent, held *
 		attempt.SendFenceSeq = fence
 		attempt.CreatedAt = r.now()
 		attempt.VerifyNotBefore = attempt.CreatedAt.Add(3 * time.Second)
-		attempt.SuppressUntil = attempt.CreatedAt.Add(10 * time.Minute)
+		attempt.SuppressUntil = attempt.CreatedAt.Add(r.resetProbeConfig().ResetProbeMinInterval)
 		stage = "persist_activation_prepared"
 		if err = r.probeWAL.PersistSending(attempt); err != nil {
 			return fail(err, false)
@@ -1155,7 +1170,7 @@ func (r *QuotaRefresher) runTypedHeld(ctx context.Context, intent Intent, held *
 		stage = "activation_post"
 		err = held.DoHTTP(ctx, func(context.Context) error {
 			return r.probeWAL.ExecuteSend(func() error {
-				resp, e := r.doBackgroundHTTPRequest(pluginapi.HTTPRequest{Method: http.MethodPost, URL: codexResetProbeEndpoint, Headers: http.Header{"Authorization": []string{"Bearer " + pre.Credentials.AccessToken}, "Chatgpt-Account-Id": []string{pre.Credentials.ChatGPTAccountID}, "Content-Type": []string{"application/json"}}, Body: resetProbePayloadBytes()}, true)
+				resp, e := r.doBackgroundHTTPRequest(pluginapi.HTTPRequest{Method: http.MethodPost, URL: codexResetProbeEndpoint, Headers: http.Header{"Authorization": []string{"Bearer " + pre.Credentials.AccessToken}, "Chatgpt-Account-Id": []string{pre.Credentials.ChatGPTAccountID}, "Content-Type": []string{"application/json"}}, Body: resetProbePayloadBytes(r.resetProbeConfig())}, true)
 				if e != nil {
 					return e
 				}

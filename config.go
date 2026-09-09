@@ -25,7 +25,7 @@ const (
 	FallbackFillFirst FallbackMode = "fill-first"
 )
 
-var pluginVersion = "0.1.0"
+var pluginVersion = "0.1.1-mingli.1"
 
 type MonthlyMode string
 
@@ -41,6 +41,12 @@ type Config struct {
 	Fallback                        FallbackMode
 	EnableUsageFeedback             bool
 	EnableResetProbe                bool
+	ResetProbeModel                 string
+	ResetProbeRequireResetAtSlide   bool
+	ResetProbeObservationInterval   time.Duration
+	ResetProbeDriftThreshold        time.Duration
+	ResetProbeMinInterval           time.Duration
+	ResetProbeFailureCooldown       time.Duration
 	ProbeOnProvisionalRoster        bool
 	MaxRefreshConcurrency           int
 	QuotaEndpoint                   string
@@ -75,6 +81,12 @@ type rawConfig struct {
 	Fallback                        string `yaml:"fallback"`
 	EnableUsageFeedback             *bool  `yaml:"enable_usage_feedback"`
 	EnableResetProbe                *bool  `yaml:"enable_reset_probe"`
+	ResetProbeModel                 string `yaml:"reset_probe_model"`
+	ResetProbeRequireResetAtSlide   *bool  `yaml:"reset_probe_require_reset_at_slide"`
+	ResetProbeObservationInterval   string `yaml:"reset_probe_observation_interval"`
+	ResetProbeDriftThreshold        string `yaml:"reset_probe_drift_threshold"`
+	ResetProbeMinInterval           string `yaml:"reset_probe_min_interval"`
+	ResetProbeFailureCooldown       string `yaml:"reset_probe_failure_cooldown"`
 	ProbeOnProvisionalRoster        *bool  `yaml:"probe_on_provisional_roster"`
 	MaxRefreshConcurrency           *int   `yaml:"max_refresh_concurrency"`
 	QuotaEndpoint                   string `yaml:"quota_endpoint"`
@@ -98,6 +110,12 @@ func DefaultConfig() Config {
 		Fallback:                        FallbackFillFirst,
 		EnableUsageFeedback:             true,
 		EnableResetProbe:                false,
+		ResetProbeModel:                 "gpt-5.5",
+		ResetProbeRequireResetAtSlide:   false,
+		ResetProbeObservationInterval:   30 * time.Minute,
+		ResetProbeDriftThreshold:        2 * time.Minute,
+		ResetProbeMinInterval:           10 * time.Minute,
+		ResetProbeFailureCooldown:       10 * time.Minute,
 		MaxRefreshConcurrency:           1,
 		QuotaEndpoint:                   chatGPTQuotaEndpoint,
 		RefreshActiveWindow:             time.Hour,
@@ -125,6 +143,23 @@ func NormalizeConfig(cfg Config) Config {
 	}
 	if cfg.Fallback == "" {
 		cfg.Fallback = defaults.Fallback
+	}
+	if strings.TrimSpace(cfg.ResetProbeModel) == "" {
+		cfg.ResetProbeModel = defaults.ResetProbeModel
+	} else {
+		cfg.ResetProbeModel = strings.TrimSpace(cfg.ResetProbeModel)
+	}
+	if cfg.ResetProbeObservationInterval <= 0 {
+		cfg.ResetProbeObservationInterval = defaults.ResetProbeObservationInterval
+	}
+	if cfg.ResetProbeDriftThreshold <= 0 {
+		cfg.ResetProbeDriftThreshold = defaults.ResetProbeDriftThreshold
+	}
+	if cfg.ResetProbeMinInterval <= 0 {
+		cfg.ResetProbeMinInterval = defaults.ResetProbeMinInterval
+	}
+	if cfg.ResetProbeFailureCooldown <= 0 {
+		cfg.ResetProbeFailureCooldown = defaults.ResetProbeFailureCooldown
 	}
 	if cfg.MaxRefreshConcurrency <= 0 {
 		cfg.MaxRefreshConcurrency = defaults.MaxRefreshConcurrency
@@ -207,6 +242,38 @@ func DecodeConfig(raw []byte) (Config, error) {
 	}
 	if decoded.EnableResetProbe != nil {
 		cfg.EnableResetProbe = *decoded.EnableResetProbe
+	}
+	if decoded.ResetProbeModel != "" {
+		model, err := validateResetProbeModel(decoded.ResetProbeModel)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.ResetProbeModel = model
+	}
+	if decoded.ResetProbeRequireResetAtSlide != nil {
+		cfg.ResetProbeRequireResetAtSlide = *decoded.ResetProbeRequireResetAtSlide
+	}
+	for _, value := range []struct {
+		name string
+		raw  string
+		set  func(time.Duration)
+	}{
+		{"reset_probe_observation_interval", decoded.ResetProbeObservationInterval, func(d time.Duration) { cfg.ResetProbeObservationInterval = d }},
+		{"reset_probe_drift_threshold", decoded.ResetProbeDriftThreshold, func(d time.Duration) { cfg.ResetProbeDriftThreshold = d }},
+		{"reset_probe_min_interval", decoded.ResetProbeMinInterval, func(d time.Duration) { cfg.ResetProbeMinInterval = d }},
+		{"reset_probe_failure_cooldown", decoded.ResetProbeFailureCooldown, func(d time.Duration) { cfg.ResetProbeFailureCooldown = d }},
+	} {
+		if value.raw == "" {
+			continue
+		}
+		d, err := time.ParseDuration(value.raw)
+		if err != nil {
+			return Config{}, fmt.Errorf("%s: %w", value.name, err)
+		}
+		if d <= 0 {
+			return Config{}, fmt.Errorf("%s must be positive", value.name)
+		}
+		value.set(d)
 	}
 	if decoded.ProbeOnProvisionalRoster != nil {
 		cfg.ProbeOnProvisionalRoster = *decoded.ProbeOnProvisionalRoster
@@ -331,6 +398,17 @@ func parseDurationList(raw string) ([]time.Duration, error) {
 	return delays, nil
 }
 
+func validateResetProbeModel(raw string) (string, error) {
+	model := strings.TrimSpace(raw)
+	if model == "" {
+		return "", fmt.Errorf("reset_probe_model must not be empty")
+	}
+	if strings.ContainsAny(model, " \t\r\n") {
+		return "", fmt.Errorf("reset_probe_model must not contain whitespace")
+	}
+	return model, nil
+}
+
 func validateQuotaEndpoint(raw string) (string, error) {
 	endpoint := strings.TrimSpace(raw)
 	if endpoint == "" {
@@ -348,8 +426,8 @@ func PluginRegistration() registration {
 		Metadata: pluginapi.Metadata{
 			Name:             PluginID,
 			Version:          pluginVersion,
-			Author:           "doer-ee",
-			GitHubRepository: "https://github.com/doer-ee/cpa-plugin-codex-fleet-manager",
+			Author:           "HiJean99",
+			GitHubRepository: "https://github.com/HiJean99/cpa-plugin-codex-fleet-manager",
 			Logo:             "https://raw.githubusercontent.com/router-for-me/CLIProxyAPI/main/docs/logo.png",
 		},
 		Capabilities: registrationCapabilities{

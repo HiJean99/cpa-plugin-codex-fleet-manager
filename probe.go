@@ -6,11 +6,9 @@ import (
 )
 
 const (
-	resetProbeAfterResetDelay = 10 * time.Minute
+	resetProbeAfterResetDelay = 10 * time.Minute // legacy state compatibility only
 	resetProbeCloseThreshold  = 3 * time.Minute
 	codexResetProbeEndpoint   = "https://chatgpt.com/backend-api/codex/responses"
-	codexResetProbeModel      = "gpt-5.4-mini"
-	resetProbePayload         = `{"model":"gpt-5.4-mini","instructions":"","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"ping"}]}],"stream":true,"store":false}`
 )
 
 func probeWindowDuration(window QuotaWindow) (time.Duration, bool) {
@@ -183,6 +181,35 @@ func jsonNumberPathPositive(root any, path ...string) bool {
 	return ok && value > 0
 }
 
-func resetProbePayloadBytes() []byte {
-	return []byte(resetProbePayload)
+func resetProbePayloadBytes(cfg Config) []byte {
+	cfg = NormalizeConfig(cfg)
+	payload := struct {
+		Model        string `json:"model"`
+		Instructions string `json:"instructions"`
+		Input        []struct {
+			Type    string `json:"type"`
+			Role    string `json:"role"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"input"`
+		Stream bool `json:"stream"`
+		Store  bool `json:"store"`
+	}{Model: cfg.ResetProbeModel, Instructions: "Reply with OK.", Stream: true, Store: false}
+	message := struct {
+		Type    string `json:"type"`
+		Role    string `json:"role"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}{Type: "message", Role: "user"}
+	message.Content = append(message.Content, struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}{Type: "input_text", Text: "hi"})
+	payload.Input = append(payload.Input, message)
+	raw, _ := json.Marshal(payload)
+	return raw
 }

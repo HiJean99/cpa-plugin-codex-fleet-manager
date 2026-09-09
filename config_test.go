@@ -52,8 +52,8 @@ func TestProbeOnProvisionalRosterIsExplicitRiskOption(t *testing.T) {
 }
 
 func TestPluginRegistrationUsesInitialFleetVersion(t *testing.T) {
-	if got := PluginRegistration().Metadata.Version; got != "0.1.0" {
-		t.Fatalf("plugin registration version = %q, want 0.1.0", got)
+	if got := PluginRegistration().Metadata.Version; got != "0.1.1-mingli.1" {
+		t.Fatalf("plugin registration version = %q, want 0.1.1-mingli.1", got)
 	}
 }
 
@@ -65,29 +65,25 @@ func TestPluginIdentityIsIndependent(t *testing.T) {
 	if PluginDisplayName != "Codex Fleet Manager" {
 		t.Fatalf("PluginDisplayName = %q", PluginDisplayName)
 	}
-	if reg.Metadata.Name != PluginID || reg.Metadata.Author != "doer-ee" || reg.Metadata.GitHubRepository != "https://github.com/doer-ee/cpa-plugin-codex-fleet-manager" {
+	if reg.Metadata.Name != PluginID || reg.Metadata.Author != "HiJean99" || reg.Metadata.GitHubRepository != "https://github.com/HiJean99/cpa-plugin-codex-fleet-manager" {
 		t.Fatalf("unexpected Fleet metadata: %#v", reg.Metadata)
 	}
 }
 
-func TestReleaseVersionMetadataConsistent(t *testing.T) {
+func TestForkVersionMetadataConsistent(t *testing.T) {
 	for _, check := range []struct {
 		path string
-		want []string
+		want string
 	}{
-		{"config.go", []string{`var pluginVersion = "0.1.0"`}},
-		{"Makefile", []string{"VERSION ?= 0.1.0"}},
-		{"README.md", []string{"## v0.1.0 Highlights", "make package VERSION=0.1.0", "make checksums VERSION=0.1.0", "git tag -a v0.1.0 -m \"v0.1.0\"", "git push origin v0.1.0"}},
-		{"README.zh-CN.md", []string{"## v0.1.0 主要更新", "make package VERSION=0.1.0", "make checksums VERSION=0.1.0", "git tag -a v0.1.0 -m \"v0.1.0\"", "git push origin v0.1.0"}},
+		{"config.go", `var pluginVersion = "0.1.1-mingli.1"`},
+		{"Makefile", "VERSION ?= 0.1.1-mingli.1"},
 	} {
 		contents, err := os.ReadFile(check.path)
 		if err != nil {
 			t.Fatalf("read %s: %v", check.path, err)
 		}
-		for _, want := range check.want {
-			if !strings.Contains(string(contents), want) {
-				t.Errorf("%s missing %q", check.path, want)
-			}
+		if !strings.Contains(string(contents), check.want) {
+			t.Errorf("%s missing %q", check.path, check.want)
 		}
 	}
 }
@@ -144,6 +140,40 @@ func TestDecodeConfigEnableResetProbe(t *testing.T) {
 	}
 	if !cfg.EnableResetProbe {
 		t.Fatal("EnableResetProbe = false, want true")
+	}
+}
+
+func TestDefaultResetProbeTuning(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.ResetProbeModel != "gpt-5.5" {
+		t.Fatalf("ResetProbeModel = %q", cfg.ResetProbeModel)
+	}
+	if cfg.ResetProbeRequireResetAtSlide || cfg.ResetProbeObservationInterval != 30*time.Minute || cfg.ResetProbeDriftThreshold != 2*time.Minute || cfg.ResetProbeMinInterval != 10*time.Minute || cfg.ResetProbeFailureCooldown != 10*time.Minute {
+		t.Fatalf("unexpected reset probe defaults: %#v", cfg)
+	}
+}
+
+func TestDecodeConfigResetProbeTuning(t *testing.T) {
+	cfg, err := DecodeConfig([]byte("reset_probe_model: gpt-5.6-luna\nreset_probe_require_reset_at_slide: true\nreset_probe_observation_interval: 2m\nreset_probe_drift_threshold: 45s\nreset_probe_min_interval: 11m\nreset_probe_failure_cooldown: 17m\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ResetProbeModel != "gpt-5.6-luna" || !cfg.ResetProbeRequireResetAtSlide || cfg.ResetProbeObservationInterval != 2*time.Minute || cfg.ResetProbeDriftThreshold != 45*time.Second || cfg.ResetProbeMinInterval != 11*time.Minute || cfg.ResetProbeFailureCooldown != 17*time.Minute {
+		t.Fatalf("unexpected reset probe tuning: %#v", cfg)
+	}
+}
+
+func TestDecodeConfigRejectsInvalidResetProbeTuning(t *testing.T) {
+	for _, raw := range []string{
+		"reset_probe_model: 'bad model'\n",
+		"reset_probe_observation_interval: 0s\n",
+		"reset_probe_drift_threshold: -1s\n",
+		"reset_probe_min_interval: 0s\n",
+		"reset_probe_failure_cooldown: 0s\n",
+	} {
+		if _, err := DecodeConfig([]byte(raw)); err == nil {
+			t.Fatalf("accepted invalid reset probe config %q", raw)
+		}
 	}
 }
 

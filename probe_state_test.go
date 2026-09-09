@@ -206,3 +206,19 @@ func TestSuiteProbe(t *testing.T) {
 	t.Run("state", TestProbeControllerPersistentStateSetAndIllegalNoop)
 	t.Run("dormant", TestProbeControllerDormantDeadlineStillEmitsProbe)
 }
+
+func TestProbePrecheckUsesConfiguredResetAtDriftThreshold(t *testing.T) {
+	now := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+	c := NewProbeController(now)
+	base := ResetProbeBaseline(now.Add(5*time.Hour), 0, 5*time.Hour)
+	base.WindowKind = WindowFiveHour
+	c.SetWindow(1, ProbeWindowFiveHour, ProbeWindow{State: ProbePendingCheck, Baseline: base})
+	reset := now.Add(time.Minute + 5*time.Hour)
+	intents := c.Advance(1, ProbeEvent{
+		Kind: ProbeEventPrecheckResult, Now: now.Add(time.Minute), ResetDriftThreshold: 30 * time.Second,
+		Snapshots: map[ProbeWindowKind]QuotaSnapshot{ProbeWindowFiveHour: {Valid: true, ResetAt: &reset, Usage: ptrFloat(0), WindowKind: WindowFiveHour, WindowLength: 5 * time.Hour, WindowLengthKnown: true}},
+	})
+	if len(intents) != 1 || intents[0].Class != OperationProbeSend {
+		t.Fatalf("intents = %#v, want one probe send after resetAt slide", intents)
+	}
+}

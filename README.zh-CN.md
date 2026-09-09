@@ -9,6 +9,24 @@ Codex Fleet Manager 基于 Jeffery Zhang 的 Codex Quota Scheduler 改进，
 由独立维护者发布，采用 MIT License，并保留原项目的版权和许可证声明。它不是
 原项目的官方继任版本，也未获原作者背书。
 
+### HiJean99 fork 状态
+
+本 fork 基于上游提交 `ca828d1`，保留原有 scheduler、credential fencing、WAL
+和崩溃恢复机制，只对 Codex 新周期激活增加可配置能力，并把上游行为保留为兼容
+默认值：
+
+- 激活模型改为可配置；fork 默认使用 `gpt-5.5`，不再写死陈旧的
+  `gpt-5.4-mini`；
+- 5h 探测观察间隔、resetAt 滑动阈值、同账号最小激活间隔、失败冷却均可配置；
+- 可选 `reset_probe_require_reset_at_slide` 模式：首次观察只记录 resetAt，必须等
+  后续 resetAt 明显向后滑动才允许激活，采用与 9Router-style Codex auto-ping
+  相同的保守判据；
+- 可单独关闭插件调度接管，让 CPA 原生 `fill-first` 继续负责选账号，插件只负责
+  监测和激活延迟启动的五小时窗口。
+
+新周期激活仍然**默认关闭**。开启后会发送真实 Codex 请求、消耗少量额度，并在
+成功时启动下一轮五小时窗口。
+
 ## v0.1.0 主要更新
 
 - 使用独立插件身份：专属 CPA API 路径、浏览器存储、状态目录、动态库名和
@@ -134,6 +152,11 @@ OpenAI 有时会显示额度重置时间已经到达，但在账号再次发送 
 该功能默认关闭，因为激活请求可能消耗少量额度。多个并发触发会共享同一个操作，
 不会重复发送激活请求。
 
+本 fork 新增可选的 resetAt 滑动保护。启用
+`reset_probe_require_reset_at_slide: true` 后，首次观察只能记录当前 resetAt，不能
+直接授权模型请求；后续观察必须确认 resetAt 至少向后移动
+`reset_probe_drift_threshold`，才把它视作仍未真正启动的五小时窗口。
+
 ### CPA 暂时无法确认账号列表时
 
 CPA 无法确认当前 Codex 账号列表和优先级时，普通刷新和新周期激活会停止。插件
@@ -160,7 +183,7 @@ CPA 无法确认当前 Codex 账号列表和优先级时，普通刷新和新周
 ## 安装
 
 在 Codex Fleet Manager 被 CPA 插件商店收录前，请从
-[最新 GitHub Release](https://github.com/doer-ee/cpa-plugin-codex-fleet-manager/releases/latest)
+[HiJean99 fork Releases](https://github.com/HiJean99/cpa-plugin-codex-fleet-manager/releases)
 下载对应平台的压缩包：
 
 ```text
@@ -210,6 +233,12 @@ monthly_mode: expiry_order
 fallback: fill-first
 enable_usage_feedback: true
 enable_reset_probe: false
+reset_probe_model: gpt-5.5
+reset_probe_require_reset_at_slide: false
+reset_probe_observation_interval: 30m
+reset_probe_drift_threshold: 2m
+reset_probe_min_interval: 10m
+reset_probe_failure_cooldown: 10m
 probe_on_provisional_roster: false
 max_refresh_concurrency: 1
 quota_endpoint: https://chatgpt.com/backend-api/wham/usage
@@ -226,6 +255,25 @@ log_retention: 24h
 - `priority`：在同一个可选择类别和插件优先级中，月度账号排在周度账号前面。
 
 `quota_endpoint` 被限制为预期的 ChatGPT 额度端点，不能改为任意主机。
+
+如果只想把插件当作 **5 小时 warmer**，继续让 CPA 原生 `fill-first` 负责调度，
+本 fork 推荐：
+
+```yaml
+handle_enabled: false
+enable_reset_probe: true
+reset_probe_model: gpt-5.5
+reset_probe_require_reset_at_slide: true
+reset_probe_observation_interval: 1m
+reset_probe_drift_threshold: 30s
+reset_probe_min_interval: 10m
+reset_probe_failure_cooldown: 15m
+probe_on_provisional_roster: false
+```
+
+`reset_probe_model` 必须是目标 Codex OAuth 当前确实可用的模型。这里的一分钟观察
+间隔与普通额度刷新间隔相互独立。resetAt 滑动模式保持 opt-in，因此未开启时仍
+遵循上游原有 probe/恢复语义。
 
 ## 管理界面
 
@@ -300,8 +348,8 @@ make build
 构建发布压缩包和校验文件：
 
 ```bash
-make package VERSION=0.1.0
-make checksums VERSION=0.1.0
+make package VERSION=0.1.1-mingli.1
+make checksums VERSION=0.1.1-mingli.1
 ```
 
 Windows 用户可以用以下命令构建 `dist/codex-fleet-manager.dll`：
@@ -312,12 +360,12 @@ Windows 用户可以用以下命令构建 `dist/codex-fleet-manager.dll`：
 
 ## GitHub Release
 
-推送 `v0.1.0` 这类点分数字标签后，GitHub Actions 会运行发布流程。流程会测试
+推送 `v0.1.1-mingli.1` 这类 `v*` 标签后，GitHub Actions 会运行发布流程。流程会测试
 仓库，并发布各平台压缩包和 `checksums.txt`：
 
 ```bash
-git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1-mingli.1 -m "v0.1.1-mingli.1"
+git push origin v0.1.1-mingli.1
 ```
 
 发布包使用以下命名方式：

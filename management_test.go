@@ -935,8 +935,9 @@ func TestStatusPageShowsResetProbeWarningOnlyAfterProtectedLoadWhenDisabled(t *t
 func TestManagementEnglishResetProbeCopy(t *testing.T) {
 	page := renderStatusPageForTest(t, NewPluginState(DefaultConfig()))
 	for _, want := range []string{
-		"Probe performs read-only checks at the quota refresh interval with a 30-minute minimum, even while normal refresh is dormant",
-		"sends one tiny request only after detecting a lazy reset window",
+		"Probe performs read-only checks at the dedicated observation interval (30 minutes by default and configurable)",
+		"the first observation only records resetAt",
+		"a later slide exceeds the configured threshold",
 		"This may consume a small amount of quota.",
 	} {
 		if !strings.Contains(page, want) {
@@ -948,8 +949,9 @@ func TestManagementEnglishResetProbeCopy(t *testing.T) {
 func TestManagementChineseResetProbeCopy(t *testing.T) {
 	page := renderStatusPageForTest(t, NewPluginState(DefaultConfig()))
 	for _, want := range []string{
-		"即使普通刷新处于休眠状态，Probe 也会按额度刷新间隔执行只读检查，最短 30 分钟",
-		"只有检测到延迟启动的重置窗口时，才发送一次极小请求",
+		"Probe 按独立的观察间隔执行只读检查（默认 30 分钟，可配置）",
+		"首次观察只记录 resetAt",
+		"后续滑动超过阈值才发送一次极小请求",
 		"可能消耗少量额度",
 	} {
 		if !strings.Contains(page, want) {
@@ -962,13 +964,13 @@ func TestStatusPageUsesPlainChineseProbeAndMonthlyCopy(t *testing.T) {
 	page := renderStatusPageForTest(t, NewPluginState(DefaultConfig()))
 	for _, want := range []string{
 		"自动激活新的额度周期",
-		"即使普通刷新处于休眠状态，Probe 也会按额度刷新间隔执行只读检查，最短 30 分钟",
+		"Probe 按独立的观察间隔执行只读检查（默认 30 分钟，可配置）",
 		"账号列表未确认时仍允许额度探测（高风险）",
 		"通常应保持关闭",
 		"月度账号使用方式",
 		"优先使用月度账号",
 		`'settings.enableResetProbe':'Enable automatic reset probe'`,
-		`'settings.enableResetProbeHelp':'Probe performs read-only checks at the quota refresh interval with a 30-minute minimum`,
+		`'settings.enableResetProbeHelp':'Probe performs read-only checks at the dedicated observation interval (30 minutes by default and configurable)`,
 		`'settings.provisionalProbe':'Allow quota probes when the account roster is unconfirmed (high risk)'`,
 		`'settings.provisionalProbeHelp':'When CPA temporarily cannot confirm the current accounts and priorities`,
 		`'settings.monthlyMode':'Monthly mode'`,
@@ -1190,6 +1192,9 @@ func TestSettingsPayloadIncludesAdaptiveRefresh(t *testing.T) {
 	if payload.RefreshOnStartup {
 		t.Fatal("RefreshOnStartup = true, want false")
 	}
+	if payload.ResetProbeModel != "gpt-5.5" || payload.ResetProbeRequireResetAtSlide || payload.ResetProbeObservationInterval != "30m0s" || payload.ResetProbeDriftThreshold != "2m0s" || payload.ResetProbeMinInterval != "10m0s" || payload.ResetProbeFailureCooldown != "10m0s" {
+		t.Fatalf("unexpected reset probe settings: %#v", payload)
+	}
 }
 
 func TestSettingsPayloadIncludesResetProbeFlag(t *testing.T) {
@@ -1201,12 +1206,21 @@ func TestSettingsPayloadIncludesResetProbeFlag(t *testing.T) {
 	}
 
 	payload.EnableResetProbe = true
+	payload.ResetProbeModel = "gpt-5.6-luna"
+	payload.ResetProbeRequireResetAtSlide = true
+	payload.ResetProbeObservationInterval = "2m"
+	payload.ResetProbeDriftThreshold = "45s"
+	payload.ResetProbeMinInterval = "11m"
+	payload.ResetProbeFailureCooldown = "17m"
 	roundTrip, err := ConfigFromSettings(DefaultConfig(), payload)
 	if err != nil {
 		t.Fatalf("ConfigFromSettings returned error: %v", err)
 	}
 	if !roundTrip.EnableResetProbe {
 		t.Fatal("roundTrip EnableResetProbe = false, want true")
+	}
+	if roundTrip.ResetProbeModel != "gpt-5.6-luna" || !roundTrip.ResetProbeRequireResetAtSlide || roundTrip.ResetProbeObservationInterval != 2*time.Minute || roundTrip.ResetProbeDriftThreshold != 45*time.Second || roundTrip.ResetProbeMinInterval != 11*time.Minute || roundTrip.ResetProbeFailureCooldown != 17*time.Minute {
+		t.Fatalf("unexpected reset probe roundtrip: %#v", roundTrip)
 	}
 }
 

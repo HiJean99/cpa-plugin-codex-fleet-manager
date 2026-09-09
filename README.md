@@ -11,6 +11,28 @@ is independently improved and maintained. It is distributed under the MIT
 License and preserves the original project's copyright and license notices. It
 is not an official successor or endorsed release of the original project.
 
+### HiJean99 fork status
+
+This fork is based on upstream commit `ca828d1` and keeps the upstream scheduler,
+credential fencing, WAL, and crash-recovery design. The fork adds configurable
+Codex reset activation while keeping the upstream behavior as the compatibility
+default:
+
+- activation model is configurable; the fork default is `gpt-5.5` instead of the
+  stale hard-coded `gpt-5.4-mini`;
+- probe observation interval, resetAt drift threshold, minimum activation
+  interval, and failure cooldown are configurable;
+- optional `reset_probe_require_reset_at_slide` mode waits for a later resetAt
+  slide before authorizing activation, matching the conservative behavior used
+  by 9Router-style Codex auto-ping;
+- the plugin's scheduler takeover can be disabled independently, so CPA's
+  built-in `fill-first` can remain in charge while the plugin only watches and
+  activates lazy five-hour windows.
+
+Reset-window activation remains **disabled by default**. Enabling it sends a real
+Codex request, consumes a small amount of quota, and starts the next five-hour
+window when activation succeeds.
+
 ## v0.1.0 Highlights
 
 - Independent plugin identity: dedicated CPA API routes, browser storage,
@@ -158,6 +180,13 @@ This feature is disabled by default because the activation request may consume
 a small amount of quota. Concurrent triggers share one operation rather than
 sending duplicate requests.
 
+The fork adds an optional resetAt-slide guard. With
+`reset_probe_require_reset_at_slide: true`, the first observation records the
+current resetAt but cannot authorize a model request. A later observation must
+show resetAt moving forward by at least `reset_probe_drift_threshold`; this is
+useful for detecting an inactive/lazy Codex five-hour window without treating a
+single zero-usage snapshot as sufficient evidence.
+
 ### When CPA cannot confirm the account list
 
 Normal refresh and reset-window activation stop when CPA cannot confirm the
@@ -187,7 +216,7 @@ Keep this setting disabled unless you understand and accept that risk.
 
 Until Codex Fleet Manager is accepted by CPA's Plugin Store, download the
 archive for your platform from the
-[latest GitHub release](https://github.com/doer-ee/cpa-plugin-codex-fleet-manager/releases/latest):
+[HiJean99 fork releases](https://github.com/HiJean99/cpa-plugin-codex-fleet-manager/releases):
 
 ```text
 codex-fleet-manager_<version>_<goos>_<goarch>.zip
@@ -239,6 +268,12 @@ monthly_mode: expiry_order
 fallback: fill-first
 enable_usage_feedback: true
 enable_reset_probe: false
+reset_probe_model: gpt-5.5
+reset_probe_require_reset_at_slide: false
+reset_probe_observation_interval: 30m
+reset_probe_drift_threshold: 2m
+reset_probe_min_interval: 10m
+reset_probe_failure_cooldown: 10m
 probe_on_provisional_roster: false
 max_refresh_concurrency: 1
 quota_endpoint: https://chatgpt.com/backend-api/wham/usage
@@ -258,6 +293,26 @@ log_retention: 24h
 
 `quota_endpoint` is restricted to the expected ChatGPT quota endpoint and cannot
 be redirected to an arbitrary host.
+
+For a **five-hour warmer only** setup that leaves CPA's built-in `fill-first`
+scheduler untouched, this fork is intended to be used with:
+
+```yaml
+handle_enabled: false
+enable_reset_probe: true
+reset_probe_model: gpt-5.5
+reset_probe_require_reset_at_slide: true
+reset_probe_observation_interval: 1m
+reset_probe_drift_threshold: 30s
+reset_probe_min_interval: 10m
+reset_probe_failure_cooldown: 15m
+probe_on_provisional_roster: false
+```
+
+`reset_probe_model` must be a model currently usable by the target Codex OAuth
+credentials. The one-minute observation interval is independent of the normal
+quota-refresh interval. The resetAt-slide mode is opt-in so existing upstream
+probe/recovery semantics remain the compatibility default.
 
 ## Management UI
 
@@ -339,8 +394,8 @@ make build
 Build release archives and checksums:
 
 ```bash
-make package VERSION=0.1.0
-make checksums VERSION=0.1.0
+make package VERSION=0.1.1-mingli.1
+make checksums VERSION=0.1.1-mingli.1
 ```
 
 Windows users can build `dist/codex-fleet-manager.dll` with:
@@ -351,13 +406,13 @@ Windows users can build `dist/codex-fleet-manager.dll` with:
 
 ## GitHub Releases
 
-Pushing a dotted numeric tag such as `v0.1.0` runs the GitHub Actions release
+Pushing a dotted numeric tag such as `v0.1.1-mingli.1` runs the GitHub Actions release
 workflow. It tests the repository and publishes platform archives plus
 `checksums.txt`:
 
 ```bash
-git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1-mingli.1 -m "v0.1.1-mingli.1"
+git push origin v0.1.1-mingli.1
 ```
 
 Release archives use this naming scheme:

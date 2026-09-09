@@ -557,21 +557,21 @@ func TestProductionDisabledRestartPreservesSentAttemptWithoutHTTP(t *testing.T) 
 	}
 }
 
-func TestProbeObservationIntervalHasThirtyMinuteFloor(t *testing.T) {
+func TestProbeObservationIntervalUsesDedicatedSetting(t *testing.T) {
 	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		name       string
 		configured time.Duration
 		want       time.Duration
 	}{
-		{name: "ten minutes floors", configured: 10 * time.Minute, want: 30 * time.Minute},
-		{name: "forty five minutes remains", configured: 45 * time.Minute, want: 45 * time.Minute},
+		{name: "one minute", configured: time.Minute, want: time.Minute},
+		{name: "five minutes", configured: 5 * time.Minute, want: 5 * time.Minute},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := newDueProbeRuntime(t, now, newProbeFixtureHost())
 			cfg := r.state.Config()
-			cfg.QuotaRefreshInterval = tt.configured
+			cfg.ResetProbeObservationInterval = tt.configured
 			r.state.ReplaceConfig(cfg)
 			binding, ok := r.bindings.Lookup("a")
 			if !ok {
@@ -1651,11 +1651,25 @@ func TestProbeActivationRequestUsesMinimalResponsesChanges(t *testing.T) {
 	if err := json.Unmarshal(activation.Body, &body); err != nil {
 		t.Fatalf("activation body: %v", err)
 	}
-	if body.Model != codexResetProbeModel || !body.Stream || body.Store {
-		t.Fatalf("activation body = %#v, want model=%q stream=true store=false", body, codexResetProbeModel)
+	if body.Model != "gpt-5.5" || !body.Stream || body.Store {
+		t.Fatalf("activation body = %#v, want model=gpt-5.5 stream=true store=false", body)
 	}
-	if string(activation.Body) != resetProbePayload {
-		t.Fatalf("activation body = %s, want original payload plus stream/store only", activation.Body)
+	if !strings.Contains(string(activation.Body), `"text":"hi"`) || !strings.Contains(string(activation.Body), `"instructions":"Reply with OK."`) {
+		t.Fatalf("activation body = %s, want minimal hi/OK payload", activation.Body)
+	}
+}
+
+func TestResetProbePayloadUsesConfiguredModel(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.ResetProbeModel = "gpt-5.6-luna"
+	var body struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(resetProbePayloadBytes(cfg), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Model != "gpt-5.6-luna" {
+		t.Fatalf("model = %q", body.Model)
 	}
 }
 
