@@ -240,6 +240,7 @@ reset_probe_mode: reset_at
 reset_probe_timezone: Asia/Shanghai
 reset_probe_schedule: 07:00,12:00,17:00
 reset_probe_schedule_grace: 15m
+reset_probe_all_accounts: false
 reset_probe_require_reset_at_slide: false
 reset_probe_observation_interval: 30m
 reset_probe_drift_threshold: 2m
@@ -280,14 +281,18 @@ reset_probe_mode: schedule
 reset_probe_timezone: Asia/Shanghai
 reset_probe_schedule: 07:00,12:00,17:00
 reset_probe_schedule_grace: 15m
+reset_probe_all_accounts: true
 reset_probe_min_interval: 10m
 reset_probe_failure_cooldown: 15m
 probe_on_provisional_roster: false
 ```
 
-`reset_probe_model` 必须是目标 Codex OAuth 当前确实可用的模型。`schedule` 模式只在
-配置的北京时间时点检查五小时窗口；每次先读取额度，已经存在有效窗口就不会发
-模型请求。`reset_probe_schedule_grace` 用于服务重启后短时间补触发。schedule 模式
+`reset_probe_model` 必须是目标 Codex OAuth 当前确实可用的模型。开启
+`reset_probe_all_accounts: true` 后，schedule 模式会为每个未禁用的 Codex OAuth 独立
+维护暖窗，不受 CPA priority 高低影响；临时 cooldown/unavailable 的账号也保留资格，
+以便额度重置后能够被激活。该选项不会修改 CPA priority，也不会接管原生 `fill-first`。
+每个北京时间时点仍会先读取额度，已经存在有效窗口就不会发模型请求。
+`reset_probe_schedule_grace` 用于服务重启或秒级漂移后的短时间补触发；schedule 模式
 同时停用长周期主动激活，避免夜间额外发送 probe。
 
 ## 管理界面
@@ -363,8 +368,8 @@ make build
 构建发布压缩包和校验文件：
 
 ```bash
-make package VERSION=0.1.2-mingli.1
-make checksums VERSION=0.1.2-mingli.1
+make package VERSION=0.1.3-mingli.1
+make checksums VERSION=0.1.3-mingli.1
 ```
 
 Windows 用户可以用以下命令构建 `dist/codex-fleet-manager.dll`：
@@ -375,12 +380,12 @@ Windows 用户可以用以下命令构建 `dist/codex-fleet-manager.dll`：
 
 ## GitHub Release
 
-推送 `v0.1.2-mingli.1` 这类 `v*` 标签后，GitHub Actions 会运行发布流程。流程会测试
+推送 `v0.1.3-mingli.1` 这类 `v*` 标签后，GitHub Actions 会运行发布流程。流程会测试
 仓库，并发布各平台压缩包和 `checksums.txt`：
 
 ```bash
-git tag -a v0.1.2-mingli.1 -m "v0.1.2-mingli.1"
-git push origin v0.1.2-mingli.1
+git tag -a v0.1.3-mingli.1 -m "v0.1.3-mingli.1"
+git push origin v0.1.3-mingli.1
 ```
 
 发布包使用以下命名方式：

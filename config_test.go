@@ -52,8 +52,8 @@ func TestProbeOnProvisionalRosterIsExplicitRiskOption(t *testing.T) {
 }
 
 func TestPluginRegistrationUsesInitialFleetVersion(t *testing.T) {
-	if got := PluginRegistration().Metadata.Version; got != "0.1.2-mingli.1" {
-		t.Fatalf("plugin registration version = %q, want 0.1.2-mingli.1", got)
+	if got := PluginRegistration().Metadata.Version; got != "0.1.3-mingli.1" {
+		t.Fatalf("plugin registration version = %q, want 0.1.3-mingli.1", got)
 	}
 }
 
@@ -75,8 +75,8 @@ func TestForkVersionMetadataConsistent(t *testing.T) {
 		path string
 		want string
 	}{
-		{"config.go", `var pluginVersion = "0.1.2-mingli.1"`},
-		{"Makefile", "VERSION ?= 0.1.2-mingli.1"},
+		{"config.go", `var pluginVersion = "0.1.3-mingli.1"`},
+		{"Makefile", "VERSION ?= 0.1.3-mingli.1"},
 	} {
 		contents, err := os.ReadFile(check.path)
 		if err != nil {
@@ -151,17 +151,17 @@ func TestDefaultResetProbeTuning(t *testing.T) {
 	if cfg.ResetProbeMode != ResetProbeModeResetAt || cfg.ResetProbeTimezone != "Asia/Shanghai" || !reflect.DeepEqual(cfg.ResetProbeSchedule, []string{"07:00", "12:00", "17:00"}) || cfg.ResetProbeScheduleGrace != 15*time.Minute {
 		t.Fatalf("unexpected reset probe schedule defaults: %#v", cfg)
 	}
-	if cfg.ResetProbeRequireResetAtSlide || cfg.ResetProbeObservationInterval != 30*time.Minute || cfg.ResetProbeDriftThreshold != 2*time.Minute || cfg.ResetProbeMinInterval != 10*time.Minute || cfg.ResetProbeFailureCooldown != 10*time.Minute {
+	if cfg.ResetProbeAllAccounts || cfg.ResetProbeRequireResetAtSlide || cfg.ResetProbeObservationInterval != 30*time.Minute || cfg.ResetProbeDriftThreshold != 2*time.Minute || cfg.ResetProbeMinInterval != 10*time.Minute || cfg.ResetProbeFailureCooldown != 10*time.Minute {
 		t.Fatalf("unexpected reset probe defaults: %#v", cfg)
 	}
 }
 
 func TestDecodeConfigResetProbeTuning(t *testing.T) {
-	cfg, err := DecodeConfig([]byte("reset_probe_model: gpt-5.6-luna\nreset_probe_mode: schedule\nreset_probe_timezone: Asia/Shanghai\nreset_probe_schedule: 17:00,07:00,12:00\nreset_probe_schedule_grace: 20m\nreset_probe_require_reset_at_slide: true\nreset_probe_observation_interval: 2m\nreset_probe_drift_threshold: 45s\nreset_probe_min_interval: 11m\nreset_probe_failure_cooldown: 17m\n"))
+	cfg, err := DecodeConfig([]byte("reset_probe_model: gpt-5.6-luna\nreset_probe_mode: schedule\nreset_probe_timezone: Asia/Shanghai\nreset_probe_schedule: 17:00,07:00,12:00\nreset_probe_schedule_grace: 20m\nreset_probe_all_accounts: true\nreset_probe_require_reset_at_slide: true\nreset_probe_observation_interval: 2m\nreset_probe_drift_threshold: 45s\nreset_probe_min_interval: 11m\nreset_probe_failure_cooldown: 17m\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ResetProbeModel != "gpt-5.6-luna" || cfg.ResetProbeMode != ResetProbeModeSchedule || cfg.ResetProbeTimezone != "Asia/Shanghai" || !reflect.DeepEqual(cfg.ResetProbeSchedule, []string{"07:00", "12:00", "17:00"}) || cfg.ResetProbeScheduleGrace != 20*time.Minute || !cfg.ResetProbeRequireResetAtSlide || cfg.ResetProbeObservationInterval != 2*time.Minute || cfg.ResetProbeDriftThreshold != 45*time.Second || cfg.ResetProbeMinInterval != 11*time.Minute || cfg.ResetProbeFailureCooldown != 17*time.Minute {
+	if cfg.ResetProbeModel != "gpt-5.6-luna" || cfg.ResetProbeMode != ResetProbeModeSchedule || cfg.ResetProbeTimezone != "Asia/Shanghai" || !reflect.DeepEqual(cfg.ResetProbeSchedule, []string{"07:00", "12:00", "17:00"}) || cfg.ResetProbeScheduleGrace != 20*time.Minute || !cfg.ResetProbeAllAccounts || !cfg.ResetProbeRequireResetAtSlide || cfg.ResetProbeObservationInterval != 2*time.Minute || cfg.ResetProbeDriftThreshold != 45*time.Second || cfg.ResetProbeMinInterval != 11*time.Minute || cfg.ResetProbeFailureCooldown != 17*time.Minute {
 		t.Fatalf("unexpected reset probe tuning: %#v", cfg)
 	}
 }

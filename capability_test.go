@@ -211,3 +211,16 @@ func TestSuiteCapabilityHighestCodexTierRejectsEmptyResults(t *testing.T) {
 		t.Fatalf("HighestCodexTier(nil) = (%d, %#v, %t), want zero values", priority, ids, ok)
 	}
 }
+
+func TestSuiteCapabilityABIIgnoresDisabledButKeepsTemporarilyUnavailableCodex(t *testing.T) {
+	lister := ABIHostAuthLister{call: func(string, any) (json.RawMessage, error) {
+		return json.RawMessage(`{"files":[{"id":"ok","auth_index":"ok","provider":"codex","priority":1},{"id":"disabled","auth_index":"disabled","provider":"codex","priority":1,"disabled":true},{"id":"unavailable","auth_index":"unavailable","provider":"codex","priority":1,"unavailable":true}]}`), nil
+	}}
+	entries, err := lister.ListHostAuths(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 || entries[0].ID != "ok" || entries[1].ID != "unavailable" {
+		t.Fatalf("entries = %#v, want enabled Codex entries including temporary-unavailable cooldown accounts", entries)
+	}
+}

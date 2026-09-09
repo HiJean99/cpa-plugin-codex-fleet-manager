@@ -25,7 +25,7 @@ const (
 	FallbackFillFirst FallbackMode = "fill-first"
 )
 
-var pluginVersion = "0.1.2-mingli.1"
+var pluginVersion = "0.1.3-mingli.1"
 
 type MonthlyMode string
 
@@ -46,6 +46,7 @@ type Config struct {
 	ResetProbeTimezone              string
 	ResetProbeSchedule              []string
 	ResetProbeScheduleGrace         time.Duration
+	ResetProbeAllAccounts           bool
 	ResetProbeRequireResetAtSlide   bool
 	ResetProbeObservationInterval   time.Duration
 	ResetProbeDriftThreshold        time.Duration
@@ -90,6 +91,7 @@ type rawConfig struct {
 	ResetProbeTimezone              string `yaml:"reset_probe_timezone"`
 	ResetProbeSchedule              string `yaml:"reset_probe_schedule"`
 	ResetProbeScheduleGrace         string `yaml:"reset_probe_schedule_grace"`
+	ResetProbeAllAccounts           *bool  `yaml:"reset_probe_all_accounts"`
 	ResetProbeRequireResetAtSlide   *bool  `yaml:"reset_probe_require_reset_at_slide"`
 	ResetProbeObservationInterval   string `yaml:"reset_probe_observation_interval"`
 	ResetProbeDriftThreshold        string `yaml:"reset_probe_drift_threshold"`
@@ -123,6 +125,7 @@ func DefaultConfig() Config {
 		ResetProbeTimezone:              "Asia/Shanghai",
 		ResetProbeSchedule:              []string{"07:00", "12:00", "17:00"},
 		ResetProbeScheduleGrace:         15 * time.Minute,
+		ResetProbeAllAccounts:           false,
 		ResetProbeRequireResetAtSlide:   false,
 		ResetProbeObservationInterval:   30 * time.Minute,
 		ResetProbeDriftThreshold:        2 * time.Minute,
@@ -305,6 +308,9 @@ func DecodeConfig(raw []byte) (Config, error) {
 			return Config{}, fmt.Errorf("reset_probe_schedule_grace must be a positive duration")
 		}
 		cfg.ResetProbeScheduleGrace = d
+	}
+	if decoded.ResetProbeAllAccounts != nil {
+		cfg.ResetProbeAllAccounts = *decoded.ResetProbeAllAccounts
 	}
 	if decoded.ResetProbeRequireResetAtSlide != nil {
 		cfg.ResetProbeRequireResetAtSlide = *decoded.ResetProbeRequireResetAtSlide

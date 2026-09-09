@@ -90,10 +90,12 @@ func (l ABIHostAuthLister) ListHostAuths(ctx context.Context) ([]RosterEntry, er
 	}
 	var response struct {
 		Files []struct {
-			ID        string `json:"id"`
-			AuthIndex string `json:"auth_index"`
-			Provider  string `json:"provider"`
-			Priority  *int   `json:"priority"`
+			ID          string `json:"id"`
+			AuthIndex   string `json:"auth_index"`
+			Provider    string `json:"provider"`
+			Priority    *int   `json:"priority"`
+			Disabled    bool   `json:"disabled"`
+			Unavailable bool   `json:"unavailable"`
 		} `json:"files"`
 	}
 	if err := json.Unmarshal(result, &response); err != nil {
@@ -101,7 +103,9 @@ func (l ABIHostAuthLister) ListHostAuths(ctx context.Context) ([]RosterEntry, er
 	}
 	entries := make([]RosterEntry, 0, len(response.Files))
 	for _, file := range response.Files {
-		if !strings.EqualFold(strings.TrimSpace(file.Provider), "codex") {
+		// Unavailable is intentionally not filtered: quota exhaustion and cooldown are
+		// transient states, and schedule warmers must keep those accounts eligible.
+		if !strings.EqualFold(strings.TrimSpace(file.Provider), "codex") || file.Disabled {
 			continue
 		}
 		priority := file.Priority

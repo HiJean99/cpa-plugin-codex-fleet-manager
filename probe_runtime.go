@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
@@ -265,25 +266,31 @@ func (r *QuotaRefresher) bootstrapScheduledFiveHourWindowsLocked(bindings map[st
 			touched[instance] = struct{}{}
 		}
 	}
-	accounts := r.state.Snapshot(now).Accounts
-	for _, account := range accounts {
-		binding, ok := bindings[account.AuthID]
-		if !ok || binding.Instance == 0 || account.Quota.FiveHour == nil {
+	activeBindings, _ := r.activeProbeBindings(r.runtimeRoster(), bindings)
+	accounts := map[string]AccountState{}
+	for _, account := range r.state.Snapshot(now).Accounts {
+		accounts[account.AuthID] = account
+	}
+	for authID, binding := range activeBindings {
+		if binding.Instance == 0 {
 			continue
 		}
 		existing, exists := r.probeController.Window(binding.Instance, ProbeWindowFiveHour)
 		if exists && (existing.State == ProbeSentAwaitingVerify || existing.State == ProbeSentUnknown || existing.State == ProbePendingCheck || existing.State == ProbeAuthBlocked) {
 			continue
 		}
-		usage := 0.0
-		if account.Quota.FiveHour.UsedPercent != nil {
-			usage = *account.Quota.FiveHour.UsedPercent
-		}
-		duration, known := probeWindowDuration(*account.Quota.FiveHour)
-		base := ResetProbeBaseline(account.Quota.FiveHour.ResetAt, usage, 0)
-		base.WindowKind = WindowFiveHour
-		if known {
-			base.WindowLength = duration
+		base := ProbeBaseline{Kind: ProbeBaselineNone, WindowKind: WindowFiveHour}
+		if account, ok := accounts[authID]; ok && account.Quota.FiveHour != nil {
+			usage := 0.0
+			if account.Quota.FiveHour.UsedPercent != nil {
+				usage = *account.Quota.FiveHour.UsedPercent
+			}
+			duration, known := probeWindowDuration(*account.Quota.FiveHour)
+			base = ResetProbeBaseline(account.Quota.FiveHour.ResetAt, usage, 0)
+			base.WindowKind = WindowFiveHour
+			if known {
+				base.WindowLength = duration
+			}
 		}
 		deadline := scheduledProbeDeadline(cfg, now, existing.LastScheduleSlot)
 		state := ProbeWaitingReset
@@ -713,12 +720,34 @@ func (r *QuotaRefresher) recoverProbeFromRoster(bindings map[string]RuntimeBindi
 	return r.persistProbeInstances(touched)
 }
 
-func activeProbeBindings(roster HostRosterSnapshot, bindings map[string]RuntimeBinding) (map[string]RuntimeBinding, map[AuthInstanceID]struct{}) {
-	tier := highestTierSet(roster)
+func (r *QuotaRefresher) resetProbeAllAccountsEnabled() bool {
+	if r == nil || r.state == nil {
+		return false
+	}
+	cfg := NormalizeConfig(r.state.Config())
+	return cfg.EnableResetProbe && cfg.ResetProbeMode == ResetProbeModeSchedule && cfg.ResetProbeAllAccounts
+}
+
+func allCodexRosterSet(roster HostRosterSnapshot) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, entry := range roster.Entries {
+		if entry.ID == "" || !strings.EqualFold(entry.Provider, "codex") || entry.Priority == nil {
+			continue
+		}
+		out[entry.ID] = struct{}{}
+	}
+	return out
+}
+
+func (r *QuotaRefresher) activeProbeBindings(roster HostRosterSnapshot, bindings map[string]RuntimeBinding) (map[string]RuntimeBinding, map[AuthInstanceID]struct{}) {
+	allowed := highestTierSet(roster)
+	if r.resetProbeAllAccountsEnabled() {
+		allowed = allCodexRosterSet(roster)
+	}
 	byID := map[string]RuntimeBinding{}
 	instances := map[AuthInstanceID]struct{}{}
 	for id, b := range bindings {
-		if _, ok := tier[id]; ok && b.Instance != 0 {
+		if _, ok := allowed[id]; ok && b.Instance != 0 {
 			byID[id] = b
 			instances[b.Instance] = struct{}{}
 		}
@@ -816,7 +845,7 @@ func (r *QuotaRefresher) runProbeDuePass(ctx context.Context) error {
 		bindings[id] = b
 	}
 	r.bindings.mu.RUnlock()
-	bindings, activeInstances := activeProbeBindings(r.runtimeRoster(), bindings)
+	bindings, activeInstances := r.activeProbeBindings(r.runtimeRoster(), bindings)
 	var firstErr error
 	if err := r.reconcileProbeOrphans(persisted, activeInstances); err != nil {
 		firstErr = err
@@ -849,7 +878,6 @@ func (r *QuotaRefresher) runProbeDuePass(ctx context.Context) error {
 					if slot, ok := scheduledProbeCurrentSlot(r.resetProbeConfig(), now); ok {
 						w.LastScheduleSlot = slot
 					}
-					w.Baseline.SuspectedLazy = true
 					r.probeController.SetWindow(b.Instance, k, w)
 				}
 				r.probeController.Advance(b.Instance, ProbeEvent{Kind: ProbeEventDeadline, Window: k, Now: now})
@@ -962,7 +990,7 @@ func (r *QuotaRefresher) runProbeRecoveryOwned(ctx context.Context) (runErr erro
 		allBindings[id] = b
 	}
 	r.bindings.mu.RUnlock()
-	bindings, activeInstances := activeProbeBindings(r.runtimeRoster(), allBindings)
+	bindings, activeInstances := r.activeProbeBindings(r.runtimeRoster(), allBindings)
 	persisted, err := r.runtimeStore.PersistentSnapshot()
 	if err != nil {
 		return err

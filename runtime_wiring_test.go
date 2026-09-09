@@ -1931,3 +1931,69 @@ func TestSuiteRuntimeWiring(t *testing.T) {
 	t.Run("user schema corruption", TestUserDataSchemaMigrationAndCorruptionEvidence)
 	t.Run("user future dual corruption", TestUserDataFutureSchemaFailsSafeAndDualCorruptionPreservesEvidence)
 }
+
+func TestScheduledWarmerAllAccountsKeepsCPAAdmissionHighestTier(t *testing.T) {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 9, 9, 15, 0, 0, loc)
+	cfg := DefaultConfig()
+	cfg.HandleEnabled = false
+	cfg.EnableResetProbe = true
+	cfg.ResetProbeMode = ResetProbeModeSchedule
+	cfg.ResetProbeAllAccounts = true
+	cfg.ResetProbeTimezone = "Asia/Shanghai"
+	cfg.ResetProbeSchedule = []string{"07:00", "12:00", "17:00"}
+	state := NewPluginState(cfg)
+	host := &countingProductionHost{auth: map[string]pluginapi.HostAuthGetResponse{
+		"high": {AuthIndex: "high", Name: "high.json", JSON: json.RawMessage(`{"access_token":"high","refresh_token":"rh","account_id":"acct-high"}`)},
+		"low":  {AuthIndex: "low", Name: "low.json", JSON: json.RawMessage(`{"access_token":"low","refresh_token":"rl","account_id":"acct-low"}`)},
+	}}
+	adapter := &rosterCredentialHost{host: host, roster: HostRosterSnapshot{Capability: CapabilityB}}
+	r, err := NewProductionQuotaRefresher(host, state, adapter, HostRosterSnapshot{Capability: CapabilityB}, filepath.Join(t.TempDir(), "state.json"), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	adapter.bindings = r.bindings
+	roster := HostRosterSnapshot{Capability: CapabilityA, Confirmed: true, BackgroundAllowed: true, Health: RosterHealthy, Entries: []RosterEntry{
+		{ID: "low", AuthIndex: "low", Provider: "codex", Priority: intPtr(0)},
+		{ID: "high", AuthIndex: "high", Provider: "codex", Priority: intPtr(1)},
+	}}
+	if err := r.PublishAuthoritativeRoster(context.Background(), roster); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.bindings.Lookup("high"); !ok {
+		t.Fatal("highest-tier binding missing")
+	}
+	if _, ok := r.bindings.Lookup("low"); !ok {
+		t.Fatal("lower-tier binding missing from all-account warmer roster")
+	}
+	admission, _ := state.CPAAdmissionVersioned()
+	if admission.Priority != 1 || len(admission.AuthIDs) != 1 {
+		t.Fatalf("CPA admission = %#v, want only highest priority tier", admission)
+	}
+	if _, ok := admission.AuthIDs["high"]; !ok {
+		t.Fatalf("CPA admission missing high account: %#v", admission)
+	}
+	if _, ok := admission.AuthIDs["low"]; ok {
+		t.Fatalf("lower-priority account leaked into CPA admission: %#v", admission)
+	}
+	persisted, err := r.runtimeStore.PersistentSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantDeadline := time.Date(2026, 9, 9, 12, 0, 0, 0, loc)
+	if len(persisted.ProbeWindows) != 2 {
+		t.Fatalf("probe windows = %#v, want two account instances", persisted.ProbeWindows)
+	}
+	for instance, windows := range persisted.ProbeWindows {
+		window, ok := windows[ProbeWindowFiveHour]
+		if !ok {
+			t.Fatalf("instance %d missing five-hour schedule window", instance)
+		}
+		if window.State != ProbeWaitingReset || !window.Deadline.Equal(wantDeadline) || window.Baseline.Kind != ProbeBaselineNone {
+			t.Fatalf("instance %d window = %#v, want quota-independent 12:00 schedule", instance, window)
+		}
+	}
+}

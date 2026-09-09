@@ -1,5 +1,5 @@
 PLUGIN_NAME ?= codex-fleet-manager
-VERSION ?= 0.1.2-mingli.1
+VERSION ?= 0.1.3-mingli.1
 BUILD_DIR ?= dist
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)

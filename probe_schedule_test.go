@@ -143,10 +143,8 @@ func TestBootstrapScheduledFiveHourUsesWallClockDeadline(t *testing.T) {
 	cfg.ResetProbeTimezone = "Asia/Shanghai"
 	cfg.ResetProbeSchedule = []string{"07:00", "12:00", "17:00"}
 	state := NewPluginState(cfg)
-	zero := 0.0
-	seconds := int64(18000)
-	state.UpsertQuota(AccountState{AuthID: "a", Provider: "codex", LastSuccessAt: now, Quota: ParsedQuota{FiveHour: &QuotaWindow{Kind: WindowFiveHour, UsedPercent: &zero, LimitWindowSeconds: &seconds, ResetAt: now.Add(30 * time.Minute)}}})
-	r := &QuotaRefresher{state: state, now: func() time.Time { return now }, probeController: NewProbeController(now), roster: HostRosterSnapshot{Capability: CapabilityA}}
+	priority := 0
+	r := &QuotaRefresher{state: state, now: func() time.Time { return now }, probeController: NewProbeController(now), roster: HostRosterSnapshot{Capability: CapabilityA, Entries: []RosterEntry{{ID: "a", AuthIndex: "idx-a", Provider: "codex", Priority: &priority}}}}
 	touched := map[AuthInstanceID]struct{}{}
 	r.bootstrapScheduledFiveHourWindowsLocked(map[string]RuntimeBinding{"a": {AuthID: "a", Instance: 1}}, now, touched)
 	window, ok := r.probeController.Window(1, ProbeWindowFiveHour)
@@ -156,6 +154,9 @@ func TestBootstrapScheduledFiveHourUsesWallClockDeadline(t *testing.T) {
 	want := time.Date(2026, 9, 9, 7, 0, 0, 0, time.FixedZone("CST", 8*3600))
 	if window.State != ProbeWaitingReset || !window.Deadline.Equal(want) {
 		t.Fatalf("window = %#v, want waiting deadline %s", window, want)
+	}
+	if window.Baseline.Kind != ProbeBaselineNone {
+		t.Fatalf("baseline = %#v, want quota-independent empty baseline", window.Baseline)
 	}
 	if _, ok := touched[1]; !ok {
 		t.Fatal("scheduled bootstrap did not mark instance touched")
@@ -209,5 +210,67 @@ func TestScheduleModeDisablesLongWindowActivation(t *testing.T) {
 	window, ok := r.probeController.Window(1, ProbeWindowLong)
 	if !ok || window.State != ProbeIdle || !window.Deadline.IsZero() {
 		t.Fatalf("long window = %#v, want idle with no deadline", window)
+	}
+}
+
+func TestScheduledFiveHourPrecheckWithoutQuotaBaselineSendsWhenExpired(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	next := now.Add(5 * time.Hour)
+	zero := 0.0
+	expired := now.Add(-time.Minute)
+	controller := NewProbeController(now)
+	controller.SetWindow(1, ProbeWindowFiveHour, ProbeWindow{
+		State:            ProbePendingCheck,
+		Baseline:         ProbeBaseline{Kind: ProbeBaselineNone, WindowKind: WindowFiveHour},
+		LastScheduleSlot: now,
+	})
+	intents := controller.Advance(1, ProbeEvent{
+		Kind:                  ProbeEventPrecheckResult,
+		Now:                   now,
+		ScheduledFiveHourNext: next,
+		Snapshots: map[ProbeWindowKind]QuotaSnapshot{
+			ProbeWindowFiveHour: {Valid: true, ResetAt: &expired, Usage: &zero, WindowKind: WindowFiveHour, WindowLength: 5 * time.Hour, WindowLengthKnown: true},
+		},
+	})
+	if len(intents) != 1 || intents[0].Class != OperationProbeSend {
+		t.Fatalf("intents = %#v, want one activation send from quota-independent schedule baseline", intents)
+	}
+	window, ok := controller.Window(1, ProbeWindowFiveHour)
+	if !ok || window.State != ProbeSentAwaitingVerify {
+		t.Fatalf("window = %#v, want sent-awaiting-verify", window)
+	}
+}
+
+func TestScheduledFiveHourInitialBaselineWaitsForNearResetWithinGrace(t *testing.T) {
+	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	next := now.Add(5 * time.Hour)
+	graceEnd := now.Add(15 * time.Minute)
+	zero := 0.0
+	nearReset := now.Add(4 * time.Second)
+	controller := NewProbeController(now)
+	controller.SetWindow(1, ProbeWindowFiveHour, ProbeWindow{
+		State:            ProbePendingCheck,
+		Baseline:         ProbeBaseline{Kind: ProbeBaselineNone, WindowKind: WindowFiveHour},
+		LastScheduleSlot: now,
+	})
+	intents := controller.Advance(1, ProbeEvent{
+		Kind:                      ProbeEventPrecheckResult,
+		Now:                       now,
+		ScheduledFiveHourNext:     next,
+		ScheduledFiveHourGraceEnd: graceEnd,
+		Snapshots: map[ProbeWindowKind]QuotaSnapshot{
+			ProbeWindowFiveHour: {Valid: true, ResetAt: &nearReset, Usage: &zero, WindowKind: WindowFiveHour, WindowLength: 5 * time.Hour, WindowLengthKnown: true},
+		},
+	})
+	if len(intents) != 0 {
+		t.Fatalf("intents = %#v, want no activation before near reset matures", intents)
+	}
+	window, ok := controller.Window(1, ProbeWindowFiveHour)
+	if !ok {
+		t.Fatal("scheduled window missing")
+	}
+	want := nearReset.Add(probeRefreshAfterResetDelay)
+	if window.State != ProbeWaitingReset || !window.Deadline.Equal(want) {
+		t.Fatalf("window = %#v, want catch-up deadline %s", window, want)
 	}
 }

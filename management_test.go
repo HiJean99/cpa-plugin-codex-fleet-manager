@@ -1197,7 +1197,7 @@ func TestSettingsPayloadIncludesAdaptiveRefresh(t *testing.T) {
 	if payload.RefreshOnStartup {
 		t.Fatal("RefreshOnStartup = true, want false")
 	}
-	if payload.ResetProbeModel != "gpt-5.6-terra" || payload.ResetProbeMode != ResetProbeModeResetAt || payload.ResetProbeTimezone != "Asia/Shanghai" || payload.ResetProbeSchedule != "07:00,12:00,17:00" || payload.ResetProbeScheduleGrace != "15m0s" || payload.ResetProbeRequireResetAtSlide || payload.ResetProbeObservationInterval != "30m0s" || payload.ResetProbeDriftThreshold != "2m0s" || payload.ResetProbeMinInterval != "10m0s" || payload.ResetProbeFailureCooldown != "10m0s" {
+	if payload.ResetProbeModel != "gpt-5.6-terra" || payload.ResetProbeMode != ResetProbeModeResetAt || payload.ResetProbeTimezone != "Asia/Shanghai" || payload.ResetProbeSchedule != "07:00,12:00,17:00" || payload.ResetProbeScheduleGrace != "15m0s" || payload.ResetProbeAllAccounts || payload.ResetProbeRequireResetAtSlide || payload.ResetProbeObservationInterval != "30m0s" || payload.ResetProbeDriftThreshold != "2m0s" || payload.ResetProbeMinInterval != "10m0s" || payload.ResetProbeFailureCooldown != "10m0s" {
 		t.Fatalf("unexpected reset probe settings: %#v", payload)
 	}
 }
@@ -1216,6 +1216,7 @@ func TestSettingsPayloadIncludesResetProbeFlag(t *testing.T) {
 	payload.ResetProbeTimezone = "Asia/Shanghai"
 	payload.ResetProbeSchedule = "17:00,07:00,12:00"
 	payload.ResetProbeScheduleGrace = "20m"
+	payload.ResetProbeAllAccounts = true
 	payload.ResetProbeRequireResetAtSlide = true
 	payload.ResetProbeObservationInterval = "2m"
 	payload.ResetProbeDriftThreshold = "45s"
@@ -1228,7 +1229,7 @@ func TestSettingsPayloadIncludesResetProbeFlag(t *testing.T) {
 	if !roundTrip.EnableResetProbe {
 		t.Fatal("roundTrip EnableResetProbe = false, want true")
 	}
-	if roundTrip.ResetProbeModel != "gpt-5.6-luna" || roundTrip.ResetProbeMode != ResetProbeModeSchedule || roundTrip.ResetProbeTimezone != "Asia/Shanghai" || !reflect.DeepEqual(roundTrip.ResetProbeSchedule, []string{"07:00", "12:00", "17:00"}) || roundTrip.ResetProbeScheduleGrace != 20*time.Minute || !roundTrip.ResetProbeRequireResetAtSlide || roundTrip.ResetProbeObservationInterval != 2*time.Minute || roundTrip.ResetProbeDriftThreshold != 45*time.Second || roundTrip.ResetProbeMinInterval != 11*time.Minute || roundTrip.ResetProbeFailureCooldown != 17*time.Minute {
+	if roundTrip.ResetProbeModel != "gpt-5.6-luna" || roundTrip.ResetProbeMode != ResetProbeModeSchedule || roundTrip.ResetProbeTimezone != "Asia/Shanghai" || !reflect.DeepEqual(roundTrip.ResetProbeSchedule, []string{"07:00", "12:00", "17:00"}) || roundTrip.ResetProbeScheduleGrace != 20*time.Minute || !roundTrip.ResetProbeAllAccounts || !roundTrip.ResetProbeRequireResetAtSlide || roundTrip.ResetProbeObservationInterval != 2*time.Minute || roundTrip.ResetProbeDriftThreshold != 45*time.Second || roundTrip.ResetProbeMinInterval != 11*time.Minute || roundTrip.ResetProbeFailureCooldown != 17*time.Minute {
 		t.Fatalf("unexpected reset probe roundtrip: %#v", roundTrip)
 	}
 }

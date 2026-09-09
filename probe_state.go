@@ -182,6 +182,10 @@ func (c *ProbeController) Advance(i AuthInstanceID, e ProbeEvent) []Intent {
 			baseline := w.Baseline
 			shiftedZeroCandidate := false
 			strictAuthorized := false
+			scheduledInitialExpired := e.Kind == ProbeEventPrecheckResult && k == ProbeWindowFiveHour && !e.ScheduledFiveHourNext.IsZero() && baseline.Kind == ProbeBaselineNone && snap.Valid && snap.ResetAt != nil && snap.Usage != nil && snap.WindowKind == WindowFiveHour && snap.WindowLengthKnown && !snap.ResetAt.After(e.Now)
+			if scheduledInitialExpired {
+				strictAuthorized = true
+			}
 			if e.Kind == ProbeEventPrecheckResult && baseline.Kind == ProbeBaselineReset && snap.Valid && snap.ResetAt != nil && snap.Usage != nil {
 				migrated := baseline.SuspectedLazy
 				driftThreshold := e.ResetDriftThreshold

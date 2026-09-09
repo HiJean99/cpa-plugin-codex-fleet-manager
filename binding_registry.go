@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -100,20 +102,45 @@ func (r *BindingRegistry) ObserveExternalLogin(authID string, login LoginEpoch, 
 }
 
 func (r *BindingRegistry) ReconcileRoster(ctx context.Context, roster HostRosterSnapshot, host CredentialHost) (RosterReconcileResult, error) {
+	return r.reconcileRoster(ctx, roster, host, false)
+}
+
+func (r *BindingRegistry) ReconcileAllCodexRoster(ctx context.Context, roster HostRosterSnapshot, host CredentialHost) (RosterReconcileResult, error) {
+	return r.reconcileRoster(ctx, roster, host, true)
+}
+
+func (r *BindingRegistry) reconcileRoster(ctx context.Context, roster HostRosterSnapshot, host CredentialHost, includeAll bool) (RosterReconcileResult, error) {
 	if roster.Capability != CapabilityA {
 		return RosterReconcileResult{}, ErrCapabilityB
 	}
-	_, ids, ok := HighestCodexTier(roster.Entries)
-	if !ok {
+	var ids []string
+	if includeAll {
+		seen := map[string]struct{}{}
+		for _, entry := range roster.Entries {
+			if entry.ID == "" || !strings.EqualFold(entry.Provider, "codex") || entry.Priority == nil {
+				continue
+			}
+			if _, ok := seen[entry.ID]; ok {
+				continue
+			}
+			seen[entry.ID] = struct{}{}
+			ids = append(ids, entry.ID)
+		}
+		sort.Strings(ids)
+	} else {
+		_, ids, _ = HighestCodexTier(roster.Entries)
+	}
+	if len(ids) == 0 {
 		return RosterReconcileResult{}, ErrBindingNotRosterConfirmed
 	}
 	entries := make(map[string]RosterEntry, len(ids))
+	wanted := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		wanted[id] = struct{}{}
+	}
 	for _, entry := range roster.Entries {
-		for _, id := range ids {
-			if entry.ID == id {
-				entries[id] = entry
-				break
-			}
+		if _, ok := wanted[entry.ID]; ok {
+			entries[entry.ID] = entry
 		}
 	}
 	r.mu.Lock()

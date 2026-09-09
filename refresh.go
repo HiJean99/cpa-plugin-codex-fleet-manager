@@ -569,10 +569,14 @@ func (r *QuotaRefresher) PublishAuthoritativeRoster(ctx context.Context, roster 
 	for _, id := range ids {
 		allowed[id] = struct{}{}
 	}
+	bindingAllowed := allowed
+	if r.resetProbeAllAccountsEnabled() {
+		bindingAllowed = allCodexRosterSet(roster)
+	}
 	filtered := roster
 	filtered.Entries = nil
 	for _, entry := range roster.Entries {
-		if _, yes := allowed[entry.ID]; yes {
+		if _, yes := bindingAllowed[entry.ID]; yes {
 			filtered.Entries = append(filtered.Entries, entry)
 		}
 	}
@@ -586,7 +590,13 @@ func (r *QuotaRefresher) PublishAuthoritativeRoster(ctx context.Context, roster 
 		previousBindings[authID] = binding
 	}
 	r.bindings.mu.RUnlock()
-	reconciled, err := r.bindings.ReconcileRoster(ctx, filtered, bootstrapHost)
+	var reconciled RosterReconcileResult
+	var err error
+	if r.resetProbeAllAccountsEnabled() {
+		reconciled, err = r.bindings.ReconcileAllCodexRoster(ctx, filtered, bootstrapHost)
+	} else {
+		reconciled, err = r.bindings.ReconcileRoster(ctx, filtered, bootstrapHost)
+	}
 	if err != nil {
 		return err
 	}
@@ -659,6 +669,11 @@ func (r *QuotaRefresher) PublishAuthoritativeRoster(ctx context.Context, roster 
 		adapter.setRoster(filtered)
 	}
 	owner.rosterAdmissionMu.Unlock()
+	if r.resetProbeScheduleMode() {
+		if err = r.bootstrapProbeWindows(); err != nil {
+			return err
+		}
+	}
 	r.mu.Lock()
 	requested := r.startRequested
 	r.mu.Unlock()

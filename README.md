@@ -273,6 +273,7 @@ reset_probe_mode: reset_at
 reset_probe_timezone: Asia/Shanghai
 reset_probe_schedule: 07:00,12:00,17:00
 reset_probe_schedule_grace: 15m
+reset_probe_all_accounts: false
 reset_probe_require_reset_at_slide: false
 reset_probe_observation_interval: 30m
 reset_probe_drift_threshold: 2m
@@ -318,16 +319,20 @@ reset_probe_mode: schedule
 reset_probe_timezone: Asia/Shanghai
 reset_probe_schedule: 07:00,12:00,17:00
 reset_probe_schedule_grace: 15m
+reset_probe_all_accounts: true
 reset_probe_min_interval: 10m
 reset_probe_failure_cooldown: 15m
 probe_on_provisional_roster: false
 ```
 
 `reset_probe_model` must be a model currently usable by the target Codex OAuth
-account. In `schedule` mode the five-hour probe runs only at the configured wall-clock slots.
-At each slot it reads quota first; if a valid window is already active, no model request is sent.
-`reset_probe_schedule_grace` allows a short catch-up after restart. Long-window activation is
-disabled in schedule mode so no extra overnight activation is introduced.
+account. With `reset_probe_all_accounts: true`, schedule mode keeps an independent warm slot
+for every non-disabled Codex OAuth regardless of CPA priority; temporarily unavailable/cooldown
+accounts remain eligible so they can be activated after reset. This does not change CPA priority
+or take over the built-in `fill-first` scheduler. At each slot quota is read first; if a valid
+window is already active, no model request is sent. `reset_probe_schedule_grace` allows a short
+catch-up after restart. Long-window activation is disabled in schedule mode so no extra overnight
+activation is introduced.
 
 ## Management UI
 
@@ -409,8 +414,8 @@ make build
 Build release archives and checksums:
 
 ```bash
-make package VERSION=0.1.2-mingli.1
-make checksums VERSION=0.1.2-mingli.1
+make package VERSION=0.1.3-mingli.1
+make checksums VERSION=0.1.3-mingli.1
 ```
 
 Windows users can build `dist/codex-fleet-manager.dll` with:
@@ -421,13 +426,13 @@ Windows users can build `dist/codex-fleet-manager.dll` with:
 
 ## GitHub Releases
 
-Pushing a dotted numeric tag such as `v0.1.2-mingli.1` runs the GitHub Actions release
+Pushing a dotted numeric tag such as `v0.1.3-mingli.1` runs the GitHub Actions release
 workflow. It tests the repository and publishes platform archives plus
 `checksums.txt`:
 
 ```bash
-git tag -a v0.1.2-mingli.1 -m "v0.1.2-mingli.1"
-git push origin v0.1.2-mingli.1
+git tag -a v0.1.3-mingli.1 -m "v0.1.3-mingli.1"
+git push origin v0.1.3-mingli.1
 ```
 
 Release archives use this naming scheme:
