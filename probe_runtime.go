@@ -73,6 +73,26 @@ func (r *QuotaRefresher) bootstrapProbeWindows() error {
 	for instance := range r.probePersistPending {
 		touched[instance] = struct{}{}
 	}
+	if r.resetProbeScheduleMode() {
+		r.bootstrapScheduledFiveHourWindowsLocked(bindings, now, touched)
+		err := r.persistProbeInstances(touched)
+		if err != nil {
+			if r.probePersistPending == nil {
+				r.probePersistPending = map[AuthInstanceID]struct{}{}
+			}
+			for instance := range touched {
+				r.probePersistPending[instance] = struct{}{}
+			}
+		} else {
+			for instance := range touched {
+				delete(r.probePersistPending, instance)
+			}
+		}
+		if err == nil && len(touched) > 0 {
+			r.wakeRefreshLoop()
+		}
+		return err
+	}
 	for instance, windows := range r.probeController.Snapshot() {
 		for kind, window := range windows {
 			if window.State != ProbeWaitingReset || window.Baseline.Kind != ProbeBaselineReset || window.Baseline.WindowLength <= 0 {
@@ -214,6 +234,68 @@ func (r *QuotaRefresher) probeDriftThreshold() time.Duration {
 	return r.resetProbeConfig().ResetProbeDriftThreshold
 }
 
+func (r *QuotaRefresher) resetProbeScheduleMode() bool {
+	return r.resetProbeConfig().ResetProbeMode == ResetProbeModeSchedule
+}
+
+func (r *QuotaRefresher) scheduledFiveHourEventTimes(instance AuthInstanceID, now time.Time) (time.Time, time.Time) {
+	if !r.resetProbeScheduleMode() {
+		return time.Time{}, time.Time{}
+	}
+	cfg := r.resetProbeConfig()
+	next := nextScheduledProbeAfter(cfg, now)
+	if r.probeController == nil {
+		return next, time.Time{}
+	}
+	window, ok := r.probeController.Window(instance, ProbeWindowFiveHour)
+	if !ok || window.LastScheduleSlot.IsZero() {
+		return next, time.Time{}
+	}
+	return next, window.LastScheduleSlot.Add(cfg.ResetProbeScheduleGrace)
+}
+
+func (r *QuotaRefresher) bootstrapScheduledFiveHourWindowsLocked(bindings map[string]RuntimeBinding, now time.Time, touched map[AuthInstanceID]struct{}) {
+	cfg := r.resetProbeConfig()
+	for instance, windows := range r.probeController.Snapshot() {
+		if longWindow, ok := windows[ProbeWindowLong]; ok && longWindow.State != ProbeSentAwaitingVerify && longWindow.State != ProbeSentUnknown {
+			longWindow.State = ProbeIdle
+			longWindow.Deadline = time.Time{}
+			longWindow.AttemptID = ""
+			r.probeController.SetWindow(instance, ProbeWindowLong, longWindow)
+			touched[instance] = struct{}{}
+		}
+	}
+	accounts := r.state.Snapshot(now).Accounts
+	for _, account := range accounts {
+		binding, ok := bindings[account.AuthID]
+		if !ok || binding.Instance == 0 || account.Quota.FiveHour == nil {
+			continue
+		}
+		existing, exists := r.probeController.Window(binding.Instance, ProbeWindowFiveHour)
+		if exists && (existing.State == ProbeSentAwaitingVerify || existing.State == ProbeSentUnknown || existing.State == ProbePendingCheck || existing.State == ProbeAuthBlocked) {
+			continue
+		}
+		usage := 0.0
+		if account.Quota.FiveHour.UsedPercent != nil {
+			usage = *account.Quota.FiveHour.UsedPercent
+		}
+		duration, known := probeWindowDuration(*account.Quota.FiveHour)
+		base := ResetProbeBaseline(account.Quota.FiveHour.ResetAt, usage, 0)
+		base.WindowKind = WindowFiveHour
+		if known {
+			base.WindowLength = duration
+		}
+		deadline := scheduledProbeDeadline(cfg, now, existing.LastScheduleSlot)
+		state := ProbeWaitingReset
+		if r.runtimeRoster().Capability != CapabilityA {
+			state = ProbeWaitingRoster
+			deadline = time.Time{}
+		}
+		r.probeController.SetWindow(binding.Instance, ProbeWindowFiveHour, ProbeWindow{State: state, Baseline: base, Deadline: deadline, LastScheduleSlot: existing.LastScheduleSlot})
+		touched[binding.Instance] = struct{}{}
+	}
+}
+
 func (r *QuotaRefresher) persistProbeInstances(instances map[AuthInstanceID]struct{}) error {
 	if r.runtimeStore == nil || r.probeController == nil || len(instances) == 0 {
 		return nil
@@ -284,6 +366,19 @@ func (r *QuotaRefresher) reconcileObservedProbeWindows(instance AuthInstanceID, 
 					if rearmed, changed := rearmConfirmedProbeWindow(window, now, observation, now, observationInterval); changed {
 						persisted.ProbeWindows[instance][kind] = rearmed
 					}
+				}
+				continue
+			}
+			if kind == ProbeWindowFiveHour && r.resetProbeScheduleMode() && exists {
+				if nonterminalProbeAttempt(attempt) && attemptReferencesWindow(attempt, kind) {
+					continue
+				}
+				if window.State != ProbeAuthBlocked {
+					window.State = ProbeWaitingReset
+					window.Deadline = scheduledProbeDeadline(r.resetProbeConfig(), now, window.LastScheduleSlot)
+					window.Baseline.SuspectedLazy = false
+					window.AttemptID = ""
+					persisted.ProbeWindows[instance][kind] = window
 				}
 				continue
 			}
@@ -370,7 +465,9 @@ func (r *QuotaRefresher) persistVerifiedProbeCompletion(instance AuthInstanceID,
 	}
 	r.probeHoldMu.Lock()
 	defer r.probeHoldMu.Unlock()
-	r.probeController.Advance(instance, ProbeEvent{Kind: ProbeEventVerifyResult, Now: r.now(), Snapshots: probeSnapshots(quota)})
+	now := r.now()
+	nextSchedule, graceEnd := r.scheduledFiveHourEventTimes(instance, now)
+	r.probeController.Advance(instance, ProbeEvent{Kind: ProbeEventVerifyResult, Now: now, Snapshots: probeSnapshots(quota), ScheduledFiveHourNext: nextSchedule, ScheduledFiveHourGraceEnd: graceEnd})
 	return r.persistTerminalProbeCompletionLocked(instance, attemptID, quota, phases...)
 }
 
@@ -387,6 +484,16 @@ func (r *QuotaRefresher) persistTerminalProbeCompletionLocked(instance AuthInsta
 	for kind, present := range observed {
 		if present {
 			continue
+		}
+		if kind == ProbeWindowFiveHour && r.resetProbeScheduleMode() {
+			if window, ok := windows[kind]; ok {
+				window.State = ProbeWaitingReset
+				window.Deadline = scheduledProbeDeadline(r.resetProbeConfig(), r.now(), window.LastScheduleSlot)
+				window.Baseline.SuspectedLazy = false
+				window.AttemptID = ""
+				windows[kind] = window
+				continue
+			}
 		}
 		delete(windows, kind)
 	}
@@ -408,6 +515,12 @@ func (r *QuotaRefresher) persistTerminalProbeCompletionLocked(instance AuthInsta
 	}
 	for kind, present := range observed {
 		if !present {
+			if kind == ProbeWindowFiveHour && r.resetProbeScheduleMode() {
+				if window, ok := windows[kind]; ok {
+					r.probeController.SetWindow(instance, kind, window)
+					continue
+				}
+			}
 			r.probeController.RemoveWindow(instance, kind)
 		}
 	}
@@ -732,6 +845,13 @@ func (r *QuotaRefresher) runProbeDuePass(ctx context.Context) error {
 		var due []ProbeWindowKind
 		for _, k := range []ProbeWindowKind{ProbeWindowFiveHour, ProbeWindowLong} {
 			if w, ok := r.probeController.Window(b.Instance, k); ok && !w.Deadline.IsZero() && !w.Deadline.After(now) && w.State != ProbePendingCheck {
+				if k == ProbeWindowFiveHour && r.resetProbeScheduleMode() {
+					if slot, ok := scheduledProbeCurrentSlot(r.resetProbeConfig(), now); ok {
+						w.LastScheduleSlot = slot
+					}
+					w.Baseline.SuspectedLazy = true
+					r.probeController.SetWindow(b.Instance, k, w)
+				}
 				r.probeController.Advance(b.Instance, ProbeEvent{Kind: ProbeEventDeadline, Window: k, Now: now})
 			}
 			if w, ok := r.probeController.Window(b.Instance, k); ok && w.State == ProbePendingCheck {
@@ -1134,7 +1254,9 @@ func (r *QuotaRefresher) runTypedHeld(ctx context.Context, intent Intent, held *
 			return fail(err, false)
 		}
 		r.probeHoldMu.Lock()
-		r.probeController.Advance(intent.Instance, ProbeEvent{Kind: ProbeEventPrecheckResult, Now: r.now(), Snapshots: probeSnapshots(pre.Quota), ObservationInterval: r.probeObservationInterval(), ResetDriftThreshold: r.probeDriftThreshold()})
+		eventNow := r.now()
+		nextSchedule, graceEnd := r.scheduledFiveHourEventTimes(intent.Instance, eventNow)
+		r.probeController.Advance(intent.Instance, ProbeEvent{Kind: ProbeEventPrecheckResult, Now: eventNow, Snapshots: probeSnapshots(pre.Quota), ObservationInterval: r.probeObservationInterval(), ResetDriftThreshold: r.probeDriftThreshold(), ScheduledFiveHourNext: nextSchedule, ScheduledFiveHourGraceEnd: graceEnd})
 		var lazy []ProbeWindowKind
 		for _, k := range p.Windows {
 			if w, ok := r.probeController.Window(intent.Instance, k); ok && w.State == ProbeSentAwaitingVerify {
@@ -1205,7 +1327,9 @@ func (r *QuotaRefresher) runTypedHeld(ctx context.Context, intent Intent, held *
 			return fail(err, true)
 		}
 		r.probeHoldMu.Lock()
-		r.probeController.Advance(intent.Instance, ProbeEvent{Kind: ProbeEventVerifyResult, Now: r.now(), Snapshots: probeSnapshots(vr.Quota)})
+		eventNow = r.now()
+		nextSchedule, graceEnd = r.scheduledFiveHourEventTimes(intent.Instance, eventNow)
+		r.probeController.Advance(intent.Instance, ProbeEvent{Kind: ProbeEventVerifyResult, Now: eventNow, Snapshots: probeSnapshots(vr.Quota), ScheduledFiveHourNext: nextSchedule, ScheduledFiveHourGraceEnd: graceEnd})
 		for _, k := range lazy {
 			if w, ok := r.probeController.Window(intent.Instance, k); ok && w.State == ProbeRetryWait && w.Deadline.Before(attempt.SuppressUntil) {
 				w.Deadline = attempt.SuppressUntil

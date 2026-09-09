@@ -28,6 +28,7 @@ type ProbeWindow struct {
 	RetryCount         int              `json:"retry_count,omitempty"`
 	AttemptID          string           `json:"attempt_id,omitempty"`
 	AuthBlockedAtLogin LoginEpoch       `json:"auth_blocked_at_login,omitempty"`
+	LastScheduleSlot   time.Time        `json:"last_schedule_slot,omitempty"`
 }
 type ProbeEventKind string
 
@@ -42,13 +43,15 @@ const (
 )
 
 type ProbeEvent struct {
-	Kind                ProbeEventKind
-	Window              ProbeWindowKind
-	Now                 time.Time
-	Snapshots           map[ProbeWindowKind]QuotaSnapshot
-	RefreshMode         RefreshMode
-	ObservationInterval time.Duration
-	ResetDriftThreshold time.Duration
+	Kind                      ProbeEventKind
+	Window                    ProbeWindowKind
+	Now                       time.Time
+	Snapshots                 map[ProbeWindowKind]QuotaSnapshot
+	RefreshMode               RefreshMode
+	ObservationInterval       time.Duration
+	ResetDriftThreshold       time.Duration
+	ScheduledFiveHourNext     time.Time
+	ScheduledFiveHourGraceEnd time.Time
 }
 type ProbeController struct {
 	mu      sync.Mutex
@@ -192,7 +195,9 @@ func (c *ProbeController) Advance(i AuthInstanceID, e ProbeEvent) []Intent {
 				}
 				kindMatches := baseline.WindowKind != "" && snap.WindowKind == baseline.WindowKind
 				strictWindow := QuotaWindow{Kind: snap.WindowKind, UsedPercent: snap.Usage, ResetAt: *snap.ResetAt}
-				if (shifted || migrated) && kindMatches && snap.WindowLengthKnown && looksLikeStrictLazyObservation(e.Now, strictWindow, snap.WindowLength) {
+				scheduledFiveHour := k == ProbeWindowFiveHour && !e.ScheduledFiveHourNext.IsZero()
+				scheduledDue := scheduledFiveHour && baseline.SuspectedLazy && kindMatches && snap.WindowLengthKnown && *snap.Usage == 0 && (!snap.ResetAt.After(e.Now) || looksLikeStrictLazyObservation(e.Now, strictWindow, snap.WindowLength))
+				if ((shifted || migrated) && kindMatches && snap.WindowLengthKnown && looksLikeStrictLazyObservation(e.Now, strictWindow, snap.WindowLength)) || scheduledDue {
 					baseline.ResetAt = *snap.ResetAt
 					baseline.Usage = *snap.Usage
 					baseline.SuspectedLazy = true
@@ -211,31 +216,64 @@ func (c *ProbeController) Advance(i AuthInstanceID, e ProbeEvent) []Intent {
 				ws[k] = w
 				continue
 			}
+			scheduledFiveHour := k == ProbeWindowFiveHour && !e.ScheduledFiveHourNext.IsZero()
+			scheduledDeadline := func() time.Time {
+				deadline := e.ScheduledFiveHourNext
+				if scheduledFiveHour && !e.ScheduledFiveHourGraceEnd.IsZero() && w.Baseline.Kind == ProbeBaselineReset && !w.Baseline.ResetAt.IsZero() {
+					catchUp := w.Baseline.ResetAt.Add(probeRefreshAfterResetDelay)
+					if catchUp.After(e.Now) && !catchUp.After(e.ScheduledFiveHourGraceEnd) {
+						return catchUp
+					}
+				}
+				return deadline
+			}
 			switch cl.Kind {
 			case ProbeActivatedNew, ProbeActivatedInferred:
-				w.State = ProbeConfirmed
-				w.Deadline = time.Time{}
+				if scheduledFiveHour {
+					w.State = ProbeWaitingReset
+					w.Deadline = scheduledDeadline()
+				} else {
+					w.State = ProbeConfirmed
+					w.Deadline = time.Time{}
+				}
 			case ProbeNotDueYet:
 				w.State = ProbeWaitingReset
-				w.Deadline = deadlineFor(w.Baseline, e.Now, e.ObservationInterval)
+				if scheduledFiveHour {
+					w.Deadline = scheduledDeadline()
+				} else {
+					w.Deadline = deadlineFor(w.Baseline, e.Now, e.ObservationInterval)
+				}
 			case ProbeAnomaly:
-				w.State = ProbeAnomalyHold
-				w.Deadline = e.Now.Add(probeUnknownResetRecheck)
+				if scheduledFiveHour {
+					w.State = ProbeWaitingReset
+					w.Deadline = e.ScheduledFiveHourNext
+				} else {
+					w.State = ProbeAnomalyHold
+					w.Deadline = e.Now.Add(probeUnknownResetRecheck)
+				}
 			case ProbeStillLazy, ProbeAmbiguous:
 				if e.Kind == ProbeEventPrecheckResult {
 					c.seq++
 					w.State = ProbeSentAwaitingVerify
 					w.AttemptID = fmt.Sprintf("probe-%d", c.seq)
 					out = append(out, Intent{Instance: i, Class: OperationProbeSend, Source: SourceProbeActivation, Payload: []ProbeWindowKind{k}})
+				} else if scheduledFiveHour {
+					w.State = ProbeWaitingReset
+					w.Deadline = e.ScheduledFiveHourNext
 				} else {
 					w.State = ProbeRetryWait
 					w.RetryCount++
 					w.Deadline = e.Now.Add(probeBackoff(w.RetryCount))
 				}
 			default:
-				w.State = ProbeRetryWait
-				w.RetryCount++
-				w.Deadline = e.Now.Add(probeBackoff(w.RetryCount))
+				if scheduledFiveHour {
+					w.State = ProbeWaitingReset
+					w.Deadline = e.ScheduledFiveHourNext
+				} else {
+					w.State = ProbeRetryWait
+					w.RetryCount++
+					w.Deadline = e.Now.Add(probeBackoff(w.RetryCount))
+				}
 			}
 			ws[k] = w
 		case ProbeEventAuthFailed:

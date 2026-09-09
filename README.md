@@ -18,7 +18,7 @@ credential fencing, WAL, and crash-recovery design. The fork adds configurable
 Codex reset activation while keeping the upstream behavior as the compatibility
 default:
 
-- activation model is configurable; the fork default is `gpt-5.5` instead of the
+- activation model is configurable; the fork default is `gpt-5.6-terra` instead of the
   stale hard-coded `gpt-5.4-mini`;
 - probe observation interval, resetAt drift threshold, minimum activation
   interval, and failure cooldown are configurable;
@@ -268,7 +268,11 @@ monthly_mode: expiry_order
 fallback: fill-first
 enable_usage_feedback: true
 enable_reset_probe: false
-reset_probe_model: gpt-5.5
+reset_probe_model: gpt-5.6-terra
+reset_probe_mode: reset_at
+reset_probe_timezone: Asia/Shanghai
+reset_probe_schedule: 07:00,12:00,17:00
+reset_probe_schedule_grace: 15m
 reset_probe_require_reset_at_slide: false
 reset_probe_observation_interval: 30m
 reset_probe_drift_threshold: 2m
@@ -283,6 +287,15 @@ circuit_half_open_success_threshold: 2
 max_log_entries: 200
 log_retention: 24h
 ```
+
+`reset_probe_mode` accepts:
+
+- `reset_at`: observe quota dynamically from resetAt; it can be combined with
+  `reset_probe_require_reset_at_slide`.
+- `schedule`: handle the five-hour window only at wall-clock slots from
+  `reset_probe_timezone` and `reset_probe_schedule`. Each slot reads quota first. If the
+  old window expires seconds or minutes after the slot, the plugin waits for reset maturity
+  within `reset_probe_schedule_grace`; otherwise it waits for the next configured slot.
 
 `monthly_mode` accepts:
 
@@ -300,19 +313,21 @@ scheduler untouched, this fork is intended to be used with:
 ```yaml
 handle_enabled: false
 enable_reset_probe: true
-reset_probe_model: gpt-5.5
-reset_probe_require_reset_at_slide: true
-reset_probe_observation_interval: 1m
-reset_probe_drift_threshold: 30s
+reset_probe_model: gpt-5.6-terra
+reset_probe_mode: schedule
+reset_probe_timezone: Asia/Shanghai
+reset_probe_schedule: 07:00,12:00,17:00
+reset_probe_schedule_grace: 15m
 reset_probe_min_interval: 10m
 reset_probe_failure_cooldown: 15m
 probe_on_provisional_roster: false
 ```
 
 `reset_probe_model` must be a model currently usable by the target Codex OAuth
-credentials. The one-minute observation interval is independent of the normal
-quota-refresh interval. The resetAt-slide mode is opt-in so existing upstream
-probe/recovery semantics remain the compatibility default.
+account. In `schedule` mode the five-hour probe runs only at the configured wall-clock slots.
+At each slot it reads quota first; if a valid window is already active, no model request is sent.
+`reset_probe_schedule_grace` allows a short catch-up after restart. Long-window activation is
+disabled in schedule mode so no extra overnight activation is introduced.
 
 ## Management UI
 
@@ -394,8 +409,8 @@ make build
 Build release archives and checksums:
 
 ```bash
-make package VERSION=0.1.1-mingli.1
-make checksums VERSION=0.1.1-mingli.1
+make package VERSION=0.1.2-mingli.1
+make checksums VERSION=0.1.2-mingli.1
 ```
 
 Windows users can build `dist/codex-fleet-manager.dll` with:
@@ -406,13 +421,13 @@ Windows users can build `dist/codex-fleet-manager.dll` with:
 
 ## GitHub Releases
 
-Pushing a dotted numeric tag such as `v0.1.1-mingli.1` runs the GitHub Actions release
+Pushing a dotted numeric tag such as `v0.1.2-mingli.1` runs the GitHub Actions release
 workflow. It tests the repository and publishes platform archives plus
 `checksums.txt`:
 
 ```bash
-git tag -a v0.1.1-mingli.1 -m "v0.1.1-mingli.1"
-git push origin v0.1.1-mingli.1
+git tag -a v0.1.2-mingli.1 -m "v0.1.2-mingli.1"
+git push origin v0.1.2-mingli.1
 ```
 
 Release archives use this naming scheme:

@@ -1651,8 +1651,8 @@ func TestProbeActivationRequestUsesMinimalResponsesChanges(t *testing.T) {
 	if err := json.Unmarshal(activation.Body, &body); err != nil {
 		t.Fatalf("activation body: %v", err)
 	}
-	if body.Model != "gpt-5.5" || !body.Stream || body.Store {
-		t.Fatalf("activation body = %#v, want model=gpt-5.5 stream=true store=false", body)
+	if body.Model != "gpt-5.6-terra" || !body.Stream || body.Store {
+		t.Fatalf("activation body = %#v, want model=gpt-5.6-terra stream=true store=false", body)
 	}
 	if !strings.Contains(string(activation.Body), `"text":"hi"`) || !strings.Contains(string(activation.Body), `"instructions":"Reply with OK."`) {
 		t.Fatalf("activation body = %s, want minimal hi/OK payload", activation.Body)
@@ -5871,5 +5871,106 @@ func TestProductionProbeHasNoSplitSendExecutor(t *testing.T) {
 	source := string(raw)
 	if strings.Contains(source, "case OperationProbeSend:") || strings.Contains(source, "type probeSendPayload struct") {
 		t.Fatal("superseded split probe-send production executor remains")
+	}
+}
+
+func TestScheduledFiveHourRuntimeSendsTerraAndQueuesNextSlot(t *testing.T) {
+	loc := time.FixedZone("CST", 8*3600)
+	now := time.Date(2026, 9, 9, 7, 0, 0, 0, loc)
+	oldReset := now.Add(-time.Hour)
+	activeReset := now.Add(5 * time.Hour)
+	lazy := []byte(fmt.Sprintf(`{"rate_limit":{"primary_window":{"used_percent":0,"limit_window_seconds":18000,"reset_at":%q}}}`, oldReset.Format(time.RFC3339)))
+	active := []byte(fmt.Sprintf(`{"rate_limit":{"primary_window":{"used_percent":1,"limit_window_seconds":18000,"reset_at":%q}}}`, activeReset.Format(time.RFC3339)))
+	host := newProbeFixtureHost()
+	host.quota = [][]byte{lazy, active}
+	r := newDueProbeRuntime(t, now, host)
+	cfg := r.state.Config()
+	cfg.ResetProbeMode = ResetProbeModeSchedule
+	cfg.ResetProbeTimezone = "Asia/Shanghai"
+	cfg.ResetProbeSchedule = []string{"07:00", "12:00", "17:00"}
+	cfg.ResetProbeScheduleGrace = 15 * time.Minute
+	cfg.ResetProbeModel = "gpt-5.6-terra"
+	r.state.ReplaceConfig(cfg)
+	binding, ok := r.bindings.Lookup("a")
+	if !ok {
+		t.Fatal("binding missing")
+	}
+	window, ok := r.probeController.Window(binding.Instance, ProbeWindowFiveHour)
+	if !ok {
+		t.Fatal("five-hour window missing")
+	}
+	window.LastScheduleSlot = now
+	window.Baseline.SuspectedLazy = true
+	r.probeController.SetWindow(binding.Instance, ProbeWindowFiveHour, window)
+	if err := r.persistProbeWindows(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.RunProbeDueOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	host.mu.Lock()
+	requests := append([]pluginapi.HTTPRequest(nil), host.requests...)
+	host.mu.Unlock()
+	var post *pluginapi.HTTPRequest
+	for i := range requests {
+		if requests[i].Method == http.MethodPost && requests[i].URL == codexResetProbeEndpoint {
+			request := requests[i]
+			post = &request
+			break
+		}
+	}
+	if post == nil {
+		t.Fatalf("requests = %#v, want activation POST", requests)
+	}
+	var body struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(post.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Model != "gpt-5.6-terra" || !strings.Contains(string(post.Body), `"text":"hi"`) {
+		t.Fatalf("activation body = %s, want Terra hi", post.Body)
+	}
+	window, ok = r.probeController.Window(binding.Instance, ProbeWindowFiveHour)
+	wantNext := time.Date(2026, 9, 9, 12, 0, 0, 0, loc)
+	if !ok || window.State != ProbeWaitingReset || !window.Deadline.Equal(wantNext) {
+		t.Fatalf("window = %#v, want next scheduled slot %s", window, wantNext)
+	}
+}
+
+func TestScheduleModeRetainsFiveHourWindowWhenQuotaTemporarilyOmitted(t *testing.T) {
+	loc := time.FixedZone("CST", 8*3600)
+	now := time.Date(2026, 9, 9, 7, 10, 0, 0, loc)
+	host := newProbeFixtureHost()
+	r := newDueProbeRuntime(t, now, host)
+	cfg := r.state.Config()
+	cfg.ResetProbeMode = ResetProbeModeSchedule
+	cfg.ResetProbeTimezone = "Asia/Shanghai"
+	cfg.ResetProbeSchedule = []string{"07:00", "12:00", "17:00"}
+	cfg.ResetProbeScheduleGrace = 15 * time.Minute
+	r.state.ReplaceConfig(cfg)
+	binding, ok := r.bindings.Lookup("a")
+	if !ok {
+		t.Fatal("binding missing")
+	}
+	window, ok := r.probeController.Window(binding.Instance, ProbeWindowFiveHour)
+	if !ok {
+		t.Fatal("five-hour window missing")
+	}
+	window.State = ProbeWaitingReset
+	window.LastScheduleSlot = time.Date(2026, 9, 9, 7, 0, 0, 0, loc)
+	window.Deadline = time.Date(2026, 9, 9, 12, 0, 0, 0, loc)
+	r.probeController.SetWindow(binding.Instance, ProbeWindowFiveHour, window)
+	if err := r.persistProbeWindows(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.reconcileObservedProbeWindows(binding.Instance, ParsedQuota{}); err != nil {
+		t.Fatal(err)
+	}
+	window, ok = r.probeController.Window(binding.Instance, ProbeWindowFiveHour)
+	want := time.Date(2026, 9, 9, 12, 0, 0, 0, loc)
+	if !ok || window.State != ProbeWaitingReset || !window.Deadline.Equal(want) {
+		t.Fatalf("window = %#v, want retained schedule deadline %s", window, want)
 	}
 }

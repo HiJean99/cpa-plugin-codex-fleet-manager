@@ -25,7 +25,7 @@ const (
 	FallbackFillFirst FallbackMode = "fill-first"
 )
 
-var pluginVersion = "0.1.1-mingli.1"
+var pluginVersion = "0.1.2-mingli.1"
 
 type MonthlyMode string
 
@@ -42,6 +42,10 @@ type Config struct {
 	EnableUsageFeedback             bool
 	EnableResetProbe                bool
 	ResetProbeModel                 string
+	ResetProbeMode                  ResetProbeMode
+	ResetProbeTimezone              string
+	ResetProbeSchedule              []string
+	ResetProbeScheduleGrace         time.Duration
 	ResetProbeRequireResetAtSlide   bool
 	ResetProbeObservationInterval   time.Duration
 	ResetProbeDriftThreshold        time.Duration
@@ -82,6 +86,10 @@ type rawConfig struct {
 	EnableUsageFeedback             *bool  `yaml:"enable_usage_feedback"`
 	EnableResetProbe                *bool  `yaml:"enable_reset_probe"`
 	ResetProbeModel                 string `yaml:"reset_probe_model"`
+	ResetProbeMode                  string `yaml:"reset_probe_mode"`
+	ResetProbeTimezone              string `yaml:"reset_probe_timezone"`
+	ResetProbeSchedule              string `yaml:"reset_probe_schedule"`
+	ResetProbeScheduleGrace         string `yaml:"reset_probe_schedule_grace"`
 	ResetProbeRequireResetAtSlide   *bool  `yaml:"reset_probe_require_reset_at_slide"`
 	ResetProbeObservationInterval   string `yaml:"reset_probe_observation_interval"`
 	ResetProbeDriftThreshold        string `yaml:"reset_probe_drift_threshold"`
@@ -110,7 +118,11 @@ func DefaultConfig() Config {
 		Fallback:                        FallbackFillFirst,
 		EnableUsageFeedback:             true,
 		EnableResetProbe:                false,
-		ResetProbeModel:                 "gpt-5.5",
+		ResetProbeModel:                 "gpt-5.6-terra",
+		ResetProbeMode:                  ResetProbeModeResetAt,
+		ResetProbeTimezone:              "Asia/Shanghai",
+		ResetProbeSchedule:              []string{"07:00", "12:00", "17:00"},
+		ResetProbeScheduleGrace:         15 * time.Minute,
 		ResetProbeRequireResetAtSlide:   false,
 		ResetProbeObservationInterval:   30 * time.Minute,
 		ResetProbeDriftThreshold:        2 * time.Minute,
@@ -148,6 +160,22 @@ func NormalizeConfig(cfg Config) Config {
 		cfg.ResetProbeModel = defaults.ResetProbeModel
 	} else {
 		cfg.ResetProbeModel = strings.TrimSpace(cfg.ResetProbeModel)
+	}
+	if cfg.ResetProbeMode == "" {
+		cfg.ResetProbeMode = defaults.ResetProbeMode
+	}
+	if strings.TrimSpace(cfg.ResetProbeTimezone) == "" {
+		cfg.ResetProbeTimezone = defaults.ResetProbeTimezone
+	} else {
+		cfg.ResetProbeTimezone = strings.TrimSpace(cfg.ResetProbeTimezone)
+	}
+	if len(cfg.ResetProbeSchedule) == 0 {
+		cfg.ResetProbeSchedule = append([]string(nil), defaults.ResetProbeSchedule...)
+	} else {
+		cfg.ResetProbeSchedule = append([]string(nil), cfg.ResetProbeSchedule...)
+	}
+	if cfg.ResetProbeScheduleGrace <= 0 {
+		cfg.ResetProbeScheduleGrace = defaults.ResetProbeScheduleGrace
 	}
 	if cfg.ResetProbeObservationInterval <= 0 {
 		cfg.ResetProbeObservationInterval = defaults.ResetProbeObservationInterval
@@ -249,6 +277,34 @@ func DecodeConfig(raw []byte) (Config, error) {
 			return Config{}, err
 		}
 		cfg.ResetProbeModel = model
+	}
+	if decoded.ResetProbeMode != "" {
+		mode, err := validateResetProbeMode(decoded.ResetProbeMode)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.ResetProbeMode = mode
+	}
+	if decoded.ResetProbeTimezone != "" {
+		tz, err := validateResetProbeTimezone(decoded.ResetProbeTimezone)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.ResetProbeTimezone = tz
+	}
+	if decoded.ResetProbeSchedule != "" {
+		schedule, err := parseResetProbeSchedule(decoded.ResetProbeSchedule)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.ResetProbeSchedule = schedule
+	}
+	if decoded.ResetProbeScheduleGrace != "" {
+		d, err := time.ParseDuration(decoded.ResetProbeScheduleGrace)
+		if err != nil || d <= 0 {
+			return Config{}, fmt.Errorf("reset_probe_schedule_grace must be a positive duration")
+		}
+		cfg.ResetProbeScheduleGrace = d
 	}
 	if decoded.ResetProbeRequireResetAtSlide != nil {
 		cfg.ResetProbeRequireResetAtSlide = *decoded.ResetProbeRequireResetAtSlide

@@ -925,6 +925,11 @@ func TestStatusPageShowsResetProbeWarningOnlyAfterProtectedLoadWhenDisabled(t *t
 		`data-i18n="settings.enableResetProbe"`,
 		`enable_reset_probe:document.getElementById('enableResetProbe').checked`,
 		`document.getElementById('enableResetProbe').checked=s.enable_reset_probe===true`,
+		`id="resetProbeMode"`,
+		`id="resetProbeTimezone"`,
+		`id="resetProbeSchedule"`,
+		`id="resetProbeScheduleGrace"`,
+		`reset_probe_mode:document.getElementById('resetProbeMode').value`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("page missing reset probe marker %q", want)
@@ -935,9 +940,9 @@ func TestStatusPageShowsResetProbeWarningOnlyAfterProtectedLoadWhenDisabled(t *t
 func TestManagementEnglishResetProbeCopy(t *testing.T) {
 	page := renderStatusPageForTest(t, NewPluginState(DefaultConfig()))
 	for _, want := range []string{
-		"Probe performs read-only checks at the dedicated observation interval (30 minutes by default and configurable)",
-		"the first observation only records resetAt",
-		"a later slide exceeds the configured threshold",
+		"resetAt mode observes quota at its configured interval",
+		"fixed-schedule mode checks only at configured wall-clock slots",
+		"send a tiny request only when activation is needed",
 		"This may consume a small amount of quota.",
 	} {
 		if !strings.Contains(page, want) {
@@ -949,9 +954,9 @@ func TestManagementEnglishResetProbeCopy(t *testing.T) {
 func TestManagementChineseResetProbeCopy(t *testing.T) {
 	page := renderStatusPageForTest(t, NewPluginState(DefaultConfig()))
 	for _, want := range []string{
-		"Probe 按独立的观察间隔执行只读检查（默认 30 分钟，可配置）",
-		"首次观察只记录 resetAt",
-		"后续滑动超过阈值才发送一次极小请求",
+		"resetAt 模式按观察间隔检测",
+		"固定时间表模式只在配置的时点检查",
+		"只有确认需要激活时才发送极小请求",
 		"可能消耗少量额度",
 	} {
 		if !strings.Contains(page, want) {
@@ -964,13 +969,13 @@ func TestStatusPageUsesPlainChineseProbeAndMonthlyCopy(t *testing.T) {
 	page := renderStatusPageForTest(t, NewPluginState(DefaultConfig()))
 	for _, want := range []string{
 		"自动激活新的额度周期",
-		"Probe 按独立的观察间隔执行只读检查（默认 30 分钟，可配置）",
+		"固定时间表模式只在配置的时点检查",
 		"账号列表未确认时仍允许额度探测（高风险）",
 		"通常应保持关闭",
 		"月度账号使用方式",
 		"优先使用月度账号",
 		`'settings.enableResetProbe':'Enable automatic reset probe'`,
-		`'settings.enableResetProbeHelp':'Probe performs read-only checks at the dedicated observation interval (30 minutes by default and configurable)`,
+		`'settings.enableResetProbeHelp':'resetAt mode observes quota at its configured interval`,
 		`'settings.provisionalProbe':'Allow quota probes when the account roster is unconfirmed (high risk)'`,
 		`'settings.provisionalProbeHelp':'When CPA temporarily cannot confirm the current accounts and priorities`,
 		`'settings.monthlyMode':'Monthly mode'`,
@@ -1192,7 +1197,7 @@ func TestSettingsPayloadIncludesAdaptiveRefresh(t *testing.T) {
 	if payload.RefreshOnStartup {
 		t.Fatal("RefreshOnStartup = true, want false")
 	}
-	if payload.ResetProbeModel != "gpt-5.5" || payload.ResetProbeRequireResetAtSlide || payload.ResetProbeObservationInterval != "30m0s" || payload.ResetProbeDriftThreshold != "2m0s" || payload.ResetProbeMinInterval != "10m0s" || payload.ResetProbeFailureCooldown != "10m0s" {
+	if payload.ResetProbeModel != "gpt-5.6-terra" || payload.ResetProbeMode != ResetProbeModeResetAt || payload.ResetProbeTimezone != "Asia/Shanghai" || payload.ResetProbeSchedule != "07:00,12:00,17:00" || payload.ResetProbeScheduleGrace != "15m0s" || payload.ResetProbeRequireResetAtSlide || payload.ResetProbeObservationInterval != "30m0s" || payload.ResetProbeDriftThreshold != "2m0s" || payload.ResetProbeMinInterval != "10m0s" || payload.ResetProbeFailureCooldown != "10m0s" {
 		t.Fatalf("unexpected reset probe settings: %#v", payload)
 	}
 }
@@ -1207,6 +1212,10 @@ func TestSettingsPayloadIncludesResetProbeFlag(t *testing.T) {
 
 	payload.EnableResetProbe = true
 	payload.ResetProbeModel = "gpt-5.6-luna"
+	payload.ResetProbeMode = ResetProbeModeSchedule
+	payload.ResetProbeTimezone = "Asia/Shanghai"
+	payload.ResetProbeSchedule = "17:00,07:00,12:00"
+	payload.ResetProbeScheduleGrace = "20m"
 	payload.ResetProbeRequireResetAtSlide = true
 	payload.ResetProbeObservationInterval = "2m"
 	payload.ResetProbeDriftThreshold = "45s"
@@ -1219,7 +1228,7 @@ func TestSettingsPayloadIncludesResetProbeFlag(t *testing.T) {
 	if !roundTrip.EnableResetProbe {
 		t.Fatal("roundTrip EnableResetProbe = false, want true")
 	}
-	if roundTrip.ResetProbeModel != "gpt-5.6-luna" || !roundTrip.ResetProbeRequireResetAtSlide || roundTrip.ResetProbeObservationInterval != 2*time.Minute || roundTrip.ResetProbeDriftThreshold != 45*time.Second || roundTrip.ResetProbeMinInterval != 11*time.Minute || roundTrip.ResetProbeFailureCooldown != 17*time.Minute {
+	if roundTrip.ResetProbeModel != "gpt-5.6-luna" || roundTrip.ResetProbeMode != ResetProbeModeSchedule || roundTrip.ResetProbeTimezone != "Asia/Shanghai" || !reflect.DeepEqual(roundTrip.ResetProbeSchedule, []string{"07:00", "12:00", "17:00"}) || roundTrip.ResetProbeScheduleGrace != 20*time.Minute || !roundTrip.ResetProbeRequireResetAtSlide || roundTrip.ResetProbeObservationInterval != 2*time.Minute || roundTrip.ResetProbeDriftThreshold != 45*time.Second || roundTrip.ResetProbeMinInterval != 11*time.Minute || roundTrip.ResetProbeFailureCooldown != 17*time.Minute {
 		t.Fatalf("unexpected reset probe roundtrip: %#v", roundTrip)
 	}
 }

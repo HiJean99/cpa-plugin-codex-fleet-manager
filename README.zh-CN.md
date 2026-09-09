@@ -15,8 +15,10 @@ Codex Fleet Manager 基于 Jeffery Zhang 的 Codex Quota Scheduler 改进，
 和崩溃恢复机制，只对 Codex 新周期激活增加可配置能力，并把上游行为保留为兼容
 默认值：
 
-- 激活模型改为可配置；fork 默认使用 `gpt-5.5`，不再写死陈旧的
+- 激活模型改为可配置；fork 默认使用 `gpt-5.6-terra`，不再写死陈旧的
   `gpt-5.4-mini`；
+- 新增固定时间表 5h 模式，可按 `Asia/Shanghai` 的 07:00、12:00、17:00
+  预检查并按需激活，不会在夜间继续滚动五小时窗口；
 - 5h 探测观察间隔、resetAt 滑动阈值、同账号最小激活间隔、失败冷却均可配置；
 - 可选 `reset_probe_require_reset_at_slide` 模式：首次观察只记录 resetAt，必须等
   后续 resetAt 明显向后滑动才允许激活，采用与 9Router-style Codex auto-ping
@@ -233,7 +235,11 @@ monthly_mode: expiry_order
 fallback: fill-first
 enable_usage_feedback: true
 enable_reset_probe: false
-reset_probe_model: gpt-5.5
+reset_probe_model: gpt-5.6-terra
+reset_probe_mode: reset_at
+reset_probe_timezone: Asia/Shanghai
+reset_probe_schedule: 07:00,12:00,17:00
+reset_probe_schedule_grace: 15m
 reset_probe_require_reset_at_slide: false
 reset_probe_observation_interval: 30m
 reset_probe_drift_threshold: 2m
@@ -249,6 +255,13 @@ max_log_entries: 200
 log_retention: 24h
 ```
 
+`reset_probe_mode` 可选值：
+
+- `reset_at`：按额度 resetAt 动态观察；可配合 `reset_probe_require_reset_at_slide`。
+- `schedule`：仅按 `reset_probe_timezone` 与 `reset_probe_schedule` 的固定时点处理五小时窗口。
+  每个时点先读取额度；旧窗口仍剩几秒或几分钟时，会在 `reset_probe_schedule_grace`
+  范围内等到 resetAt 成熟后补查。超过宽限则等下一个配置时点，不在夜间滚动。
+
 `monthly_mode` 可选值：
 
 - `expiry_order`：周度账号和月度账号共同按到期时间排序。
@@ -262,18 +275,20 @@ log_retention: 24h
 ```yaml
 handle_enabled: false
 enable_reset_probe: true
-reset_probe_model: gpt-5.5
-reset_probe_require_reset_at_slide: true
-reset_probe_observation_interval: 1m
-reset_probe_drift_threshold: 30s
+reset_probe_model: gpt-5.6-terra
+reset_probe_mode: schedule
+reset_probe_timezone: Asia/Shanghai
+reset_probe_schedule: 07:00,12:00,17:00
+reset_probe_schedule_grace: 15m
 reset_probe_min_interval: 10m
 reset_probe_failure_cooldown: 15m
 probe_on_provisional_roster: false
 ```
 
-`reset_probe_model` 必须是目标 Codex OAuth 当前确实可用的模型。这里的一分钟观察
-间隔与普通额度刷新间隔相互独立。resetAt 滑动模式保持 opt-in，因此未开启时仍
-遵循上游原有 probe/恢复语义。
+`reset_probe_model` 必须是目标 Codex OAuth 当前确实可用的模型。`schedule` 模式只在
+配置的北京时间时点检查五小时窗口；每次先读取额度，已经存在有效窗口就不会发
+模型请求。`reset_probe_schedule_grace` 用于服务重启后短时间补触发。schedule 模式
+同时停用长周期主动激活，避免夜间额外发送 probe。
 
 ## 管理界面
 
@@ -348,8 +363,8 @@ make build
 构建发布压缩包和校验文件：
 
 ```bash
-make package VERSION=0.1.1-mingli.1
-make checksums VERSION=0.1.1-mingli.1
+make package VERSION=0.1.2-mingli.1
+make checksums VERSION=0.1.2-mingli.1
 ```
 
 Windows 用户可以用以下命令构建 `dist/codex-fleet-manager.dll`：
@@ -360,12 +375,12 @@ Windows 用户可以用以下命令构建 `dist/codex-fleet-manager.dll`：
 
 ## GitHub Release
 
-推送 `v0.1.1-mingli.1` 这类 `v*` 标签后，GitHub Actions 会运行发布流程。流程会测试
+推送 `v0.1.2-mingli.1` 这类 `v*` 标签后，GitHub Actions 会运行发布流程。流程会测试
 仓库，并发布各平台压缩包和 `checksums.txt`：
 
 ```bash
-git tag -a v0.1.1-mingli.1 -m "v0.1.1-mingli.1"
-git push origin v0.1.1-mingli.1
+git tag -a v0.1.2-mingli.1 -m "v0.1.2-mingli.1"
+git push origin v0.1.2-mingli.1
 ```
 
 发布包使用以下命名方式：
